@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ksk
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ksk_secret_2026}
+      POSTGRES_DB: ksk
+    volumes:
+      - ksk_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ksk"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ksk:${DB_PASSWORD:-ksk_secret_2026}@db:5432/ksk
+      SECRET_KEY: ${SECRET_KEY:-please-change-this-secret-key}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@2026}
+      TOKEN_EXPIRE_HOURS: ${TOKEN_EXPIRE_HOURS:-12}
+    ports:
+      - "8000:8000"
+
+volumes:
+  ksk_pgdata:

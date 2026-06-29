@@ -1,0 +1,103 @@
+from datetime import datetime
+from typing import Optional
+from pydantic import BaseModel, ConfigDict
+
+
+# ---------- Auth ----------
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    full_name: str
+    username: str
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    username: str
+    full_name: str
+    role: str
+    is_active: bool
+    created_at: datetime
+
+
+class UserCreate(BaseModel):
+    username: str
+    full_name: str = ""
+    password: str
+    role: str = "user"
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ---------- Group ----------
+class GroupBase(BaseModel):
+    ma_doan: str
+    ten_doan: str
+    thoi_gian_kham: str = ""
+    dia_diem: str = ""
+
+
+class GroupUpdate(BaseModel):
+    ten_doan: Optional[str] = None
+    thoi_gian_kham: Optional[str] = None
+    dia_diem: Optional[str] = None
+
+
+class GroupOut(GroupBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    record_count: int = 0
+    expected_count: int = 0
+
+
+# ---------- Record ----------
+class RecordBase(BaseModel):
+    cccd: str = ""
+    ma_bhyt: str = ""
+    ho_ten: str
+    ngay_sinh: str = ""
+    gioi_tinh: str = ""
+    nghe_nghiep: str = ""
+    so_nha: str = ""
+    khu_pho: str = ""
+    phuong: str = ""
+    tinh: str = ""
+    nhan_ho_so: str = ""
+
+
+class RecordOut(RecordBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    created_by: str
+    updated_by: str
+
+
+# ---------- Expected ----------
+class ExpectedItem(BaseModel):
+    cccd: str = ""
+    ma_bhyt: str = ""
+    ho_ten: str
+    ngay_sinh: str = ""
+
+
+# ---------- Logs ----------
+class LogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    ts: datetime
+    username: str
+    role: str
+    action: str
+    entity: str
+    entity_id: str
+    detail: str
+    ip: str
