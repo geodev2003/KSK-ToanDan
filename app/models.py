@@ -50,6 +50,7 @@ class Record(Base):
     phuong: Mapped[str] = mapped_column(String(128), default="")
     tinh: Mapped[str] = mapped_column(String(128), default="")
     nhan_ho_so: Mapped[str] = mapped_column(String(32), default="")
+    so_dien_thoai: Mapped[str] = mapped_column(String(20), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -79,6 +80,7 @@ class Expected(Base):
     phuong: Mapped[str] = mapped_column(String(128), default="")
     tinh: Mapped[str] = mapped_column(String(128), default="")
     dia_chi: Mapped[str] = mapped_column(String(255), default="")
+    so_dien_thoai: Mapped[str] = mapped_column(String(20), default="")
 
     group: Mapped["Group"] = relationship(back_populates="expected")
 

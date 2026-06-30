@@ -22,16 +22,22 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 def _migrate_columns(sync_conn):
     """Tự thêm cột mới vào bảng cũ (không mất dữ liệu). Chạy cho cả SQLite lẫn Postgres."""
     insp = inspect(sync_conn)
-    if "expected" not in insp.get_table_names():
-        return
-    existing = {c["name"] for c in insp.get_columns("expected")}
-    needed = {
-        "gioi_tinh": "VARCHAR(8)", "so_nha": "VARCHAR(64)", "khu_pho": "VARCHAR(128)",
-        "phuong": "VARCHAR(128)", "tinh": "VARCHAR(128)", "dia_chi": "VARCHAR(255)",
+    tables = insp.get_table_names()
+    plan = {
+        "expected": {
+            "gioi_tinh": "VARCHAR(8)", "so_nha": "VARCHAR(64)", "khu_pho": "VARCHAR(128)",
+            "phuong": "VARCHAR(128)", "tinh": "VARCHAR(128)", "dia_chi": "VARCHAR(255)",
+            "so_dien_thoai": "VARCHAR(20)",
+        },
+        "records": {"so_dien_thoai": "VARCHAR(20)"},
     }
-    for name, typ in needed.items():
-        if name not in existing:
-            sync_conn.execute(text(f"ALTER TABLE expected ADD COLUMN {name} {typ} DEFAULT ''"))
+    for table, cols in plan.items():
+        if table not in tables:
+            continue
+        existing = {c["name"] for c in insp.get_columns(table)}
+        for name, typ in cols.items():
+            if name not in existing:
+                sync_conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {typ} DEFAULT ''"))
 
 
 @asynccontextmanager
@@ -297,6 +303,10 @@ async def get_expected(gid: int, db: AsyncSession = Depends(get_db), _: m.User =
     return res.scalars().all()
 
 
+EXP_FIELDS = ["cccd", "ma_bhyt", "ho_ten", "ngay_sinh", "gioi_tinh",
+              "so_nha", "khu_pho", "phuong", "tinh", "dia_chi", "so_dien_thoai"]
+
+
 @app.put("/api/groups/{gid}/expected")
 async def set_expected(request: Request, gid: int, items: list[s.ExpectedItem],
                        admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
@@ -306,16 +316,67 @@ async def set_expected(request: Request, gid: int, items: list[s.ExpectedItem],
     await db.execute(delete(m.Expected).where(m.Expected.group_id == gid))
     for it in items:
         if it.ho_ten.strip():
-            db.add(m.Expected(
-                group_id=gid, cccd=it.cccd.strip(), ma_bhyt=it.ma_bhyt.strip(),
-                ho_ten=it.ho_ten.strip(), ngay_sinh=it.ngay_sinh.strip(),
-                gioi_tinh=it.gioi_tinh.strip(), so_nha=it.so_nha.strip(),
-                khu_pho=it.khu_pho.strip(), phuong=it.phuong.strip(),
-                tinh=it.tinh.strip(), dia_chi=it.dia_chi.strip(),
-            ))
+            db.add(m.Expected(group_id=gid, **{k: (getattr(it, k) or "").strip() for k in EXP_FIELDS}))
     await log_action(db, request, admin, "IMPORT_EXPECTED", "group", g.ma_doan, f"{len(items)} người")
     await db.commit()
     return {"ok": True, "count": len(items)}
+
+
+@app.post("/api/groups/{gid}/expected/item", response_model=s.ExpectedItem)
+async def add_expected_item(request: Request, gid: int, payload: s.ExpectedItem,
+                            admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    g = await db.scalar(select(m.Group).where(m.Group.id == gid))
+    if not g:
+        raise HTTPException(status_code=404, detail="Không tìm thấy đoàn khám")
+    if not payload.ho_ten.strip():
+        raise HTTPException(status_code=400, detail="Họ tên là bắt buộc")
+    e = m.Expected(group_id=gid, **{k: (getattr(payload, k) or "").strip() for k in EXP_FIELDS})
+    db.add(e)
+    await log_action(db, request, admin, "CREATE_EXPECTED", "expected", "", f"{e.ho_ten} | {g.ma_doan}")
+    await db.commit()
+    await db.refresh(e)
+    return e
+
+
+@app.put("/api/expected/{eid}", response_model=s.ExpectedItem)
+async def update_expected_item(request: Request, eid: int, payload: s.ExpectedItem,
+                               admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    e = await db.scalar(select(m.Expected).where(m.Expected.id == eid))
+    if not e:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi dự kiến")
+    if not payload.ho_ten.strip():
+        raise HTTPException(status_code=400, detail="Họ tên là bắt buộc")
+    for k in EXP_FIELDS:
+        setattr(e, k, (getattr(payload, k) or "").strip())
+    await log_action(db, request, admin, "UPDATE_EXPECTED", "expected", str(eid), e.ho_ten)
+    await db.commit()
+    await db.refresh(e)
+    return e
+
+
+@app.delete("/api/expected/{eid}")
+async def delete_expected_item(request: Request, eid: int,
+                               admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    e = await db.scalar(select(m.Expected).where(m.Expected.id == eid))
+    if not e:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi dự kiến")
+    name = e.ho_ten
+    await db.delete(e)
+    await log_action(db, request, admin, "DELETE_EXPECTED", "expected", str(eid), name)
+    await db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/expected/bulk_delete")
+async def bulk_delete_expected(request: Request, payload: dict,
+                               admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    ids = [int(x) for x in (payload.get("ids") or [])]
+    if not ids:
+        return {"ok": True, "deleted": 0}
+    await db.execute(delete(m.Expected).where(m.Expected.id.in_(ids)))
+    await log_action(db, request, admin, "DELETE_EXPECTED", "expected", "", f"{len(ids)} người")
+    await db.commit()
+    return {"ok": True, "deleted": len(ids)}
 
 
 def _match_key(cccd: str, ho_ten: str, ngay_sinh: str) -> str:

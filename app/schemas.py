@@ -70,6 +70,7 @@ class RecordBase(BaseModel):
     phuong: str = ""
     tinh: str = ""
     nhan_ho_so: str = ""
+    so_dien_thoai: str = ""
 
 
 class RecordOut(RecordBase):
@@ -95,6 +96,7 @@ class ExpectedItem(BaseModel):
     phuong: str = ""
     tinh: str = ""
     dia_chi: str = ""
+    so_dien_thoai: str = ""
 
 
 # ---------- Logs ----------

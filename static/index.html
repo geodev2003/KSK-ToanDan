@@ -201,7 +201,7 @@
       </div>
       <div class="tbl-wrap">
         <table><thead><tr>
-          <th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Giới tính</th>
+          <th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Giới tính</th><th>SĐT</th>
           <th>Nghề nghiệp</th><th>Số nhà</th><th>Khu phố</th><th>Phường</th><th>Tỉnh</th>
           <th>Nhận HS</th><th>Thời gian</th><th>Người nhập</th><th></th>
         </tr></thead><tbody id="recBody"></tbody></table>
@@ -231,6 +231,9 @@
           <option value="DELETE_GROUP">Xóa đoàn</option>
           <option value="CREATE_USER">Tạo người dùng</option>
           <option value="IMPORT_EXPECTED">Import DS dự kiến</option>
+          <option value="CREATE_EXPECTED">Thêm người dự kiến</option>
+          <option value="UPDATE_EXPECTED">Sửa người dự kiến</option>
+          <option value="DELETE_EXPECTED">Xóa người dự kiến</option>
         </select>
         <button class="btn" onclick="renderLogs()">⟳ Làm mới</button></div>
       <div class="tbl-wrap" style="max-height:calc(100vh - 220px)"><table>
@@ -409,14 +412,15 @@ function renderRecords(){
   document.getElementById("stDup").textContent=dupSet.size;
   const q=(document.getElementById("recSearch").value||"").toLowerCase();
   let view=records.map((r,i)=>({r,stt:i+1}));
-  if(q)view=view.filter(x=>(x.r.ho_ten+x.r.cccd+x.r.ma_bhyt+x.r.phuong).toLowerCase().includes(q));
+  if(q)view=view.filter(x=>(x.r.ho_ten+x.r.cccd+x.r.ma_bhyt+x.r.so_dien_thoai+x.r.phuong).toLowerCase().includes(q));
   const body=document.getElementById("recBody");
-  if(!view.length){ body.innerHTML=`<tr><td colspan="15" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`; return; }
+  if(!view.length){ body.innerHTML=`<tr><td colspan="16" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`; return; }
   body.innerHTML=view.map(({r,stt})=>`<tr class="${dupSet.has(r.id)?'dup':''}">
     <td class="mono">${stt}</td><td class="mono">${esc(r.cccd)}</td><td class="mono">${esc(r.ma_bhyt)}</td>
     <td><b>${esc(r.ho_ten)}</b>${dupSet.has(r.id)?' <span class="badge warn">trùng</span>':''}</td>
     <td class="mono">${esc(r.ngay_sinh)}</td>
     <td>${r.gioi_tinh?`<span class="badge ${r.gioi_tinh==='Nam'?'nam':'nu'}">${esc(r.gioi_tinh)}</span>`:''}</td>
+    <td class="mono">${esc(r.so_dien_thoai)}</td>
     <td>${esc(r.nghe_nghiep)}</td><td>${esc(r.so_nha)}</td><td>${esc(r.khu_pho)}</td><td>${esc(r.phuong)}</td><td>${esc(r.tinh)}</td>
     <td>${esc(r.nhan_ho_so)}</td><td class="mono" style="color:var(--muted)">${fmtTime(r.created_at)}</td><td>${esc(r.created_by)}</td>
     <td><div class="row-act"><button class="icon-btn" title="Sửa" onclick="openEntry(${r.id})">✎</button>
@@ -430,6 +434,7 @@ async function delRecord(id){
 /* ----- quick entry ----- */
 const FIELDS=[["cccd","CCCD",1],["ma_bhyt","Mã BHYT",1],["ho_ten","Họ tên",2],
   ["ngay_sinh","Ngày sinh (dd/mm/yyyy)",1],["gioi_tinh","Giới tính",1,"sex"],
+  ["so_dien_thoai","Số điện thoại",1],
   ["nghe_nghiep","Nghề nghiệp",1],["so_nha","Số nhà",1],["khu_pho","Khu phố",1],
   ["phuong","Phường/Xã",1],["tinh","Tỉnh/TP",1],["nhan_ho_so","Nhận hồ sơ",1,"hs"]];
 function openEntry(editId=null){
@@ -457,6 +462,7 @@ function validDate(s){ if(!s)return true; const m=s.match(/^(\d{2})\/(\d{2})\/(\
 async function saveEntry(editId){
   const g=k=>{const el=document.getElementById("e_"+k);return el?el.value.trim():"";};
   const rec={cccd:g("cccd"),ma_bhyt:g("ma_bhyt"),ho_ten:g("ho_ten"),ngay_sinh:g("ngay_sinh"),gioi_tinh:g("gioi_tinh"),
+    so_dien_thoai:g("so_dien_thoai"),
     nghe_nghiep:g("nghe_nghiep"),so_nha:g("so_nha"),khu_pho:g("khu_pho"),phuong:g("phuong"),tinh:g("tinh"),nhan_ho_so:g("nhan_ho_so")};
   if(!rec.ho_ten){ toast("Họ tên là bắt buộc","err"); document.getElementById("e_ho_ten").focus(); return; }
   if(rec.ngay_sinh&&!validDate(rec.ngay_sinh)){ toast("Ngày sinh phải dạng dd/mm/yyyy","err"); document.getElementById("e_ngay_sinh").focus(); return; }
@@ -483,11 +489,11 @@ async function saveEntry(editId){
 function exportExcel(){
   const g=state.group, records=state.records;
   if(!records.length){ toast("Chưa có dữ liệu để xuất","err"); return; }
-  const header=["STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","Nghề nghiệp","Số nhà","Khu phố","Phường","Tỉnh","Nhận hồ sơ","Thời gian","Người nhập","Đoàn KSK"];
-  const rows=records.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,r.nhan_ho_so,fmtTime(r.created_at),r.created_by,g.ten_doan]);
+  const header=["STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","SĐT","Nghề nghiệp","Số nhà","Khu phố","Phường","Tỉnh","Nhận hồ sơ","Thời gian","Người nhập","Đoàn KSK"];
+  const rows=records.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,r.nhan_ho_so,fmtTime(r.created_at),r.created_by,g.ten_doan]);
   const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
-  ws["!cols"]=[6,14,16,22,12,9,16,8,12,16,12,10,18,16,20].map(w=>({wch:w}));
-  for(let i=1;i<=records.length;i++)["B","C"].forEach(c=>{const cell=ws[c+(i+1)];if(cell){cell.t="s";cell.z="@";}});
+  ws["!cols"]=[6,14,16,22,12,9,13,16,8,12,16,12,10,18,16,20].map(w=>({wch:w}));
+  for(let i=1;i<=records.length;i++)["B","C","G"].forEach(c=>{const cell=ws[c+(i+1)];if(cell){cell.t="s";cell.z="@";}});
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"DanhSach");
   XLSX.writeFile(wb,`KSK_${g.ma_doan}_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast("Đã xuất "+records.length+" bản ghi");
@@ -509,6 +515,7 @@ document.getElementById("fileImport").addEventListener("change",e=>{
         ho_ten:String(find(r,["họtên","họvàtên","hoten","tên"])||"").trim(),
         ngay_sinh:String(find(r,["ngàysinh","namsinh","nămsinh","ngaysinh"])||"").trim(),
         gioi_tinh:normSex(find(r,["giớitính","gioitinh","gt","phái"])),
+        so_dien_thoai:normPhone(find(r,["sốđiệnthoại","sđt","sdt","điệnthoại","dienthoai","phone","mobile","didong","diđộng"])),
         so_nha:String(find(r,["sốnhà","sonha","địachỉ","diachi","address"])||"").trim(),
         khu_pho:String(find(r,["khuphố","khupho","ấp","thôn","tổ"])||"").trim(),
         phuong:String(find(r,["phường","phuong","xã","xa"])||"").trim(),
@@ -564,6 +571,9 @@ function expKey(r){ const c=(r.cccd||"").trim(); if(c.length>=9)return "cccd:"+c
 function normSex(v){ const s=String(v||"").trim().toLowerCase();
   if(["nam","male","m","1","trai"].includes(s))return "Nam";
   if(["nữ","nu","female","f","2","gái","gai"].includes(s))return "Nữ"; return String(v||"").trim(); }
+function normPhone(v){ let s=String(v==null?"":v).trim().replace(/[^\d]/g,"");
+  if(/^\d{9}$/.test(s))s="0"+s;  // Excel làm rớt số 0 đầu → bù lại
+  return s; }
 function expAddr(r){ const parts=[r.so_nha,r.khu_pho,r.phuong,r.tinh].map(x=>(x||"").trim()).filter(Boolean);
   return parts.length?parts.join(", "):(r.dia_chi||"").trim(); }
 
@@ -594,13 +604,15 @@ async function openExpected(){
         <select class="select" id="exp_filter" style="width:auto" onchange="renderExpList()">
           <option value="">Tất cả</option><option value="absent">Chỉ chưa đến</option><option value="came">Chỉ đã đến</option></select>
         <button class="btn primary" id="expCopyBtn" onclick="copyExpSelected()">📋 Copy đã chọn</button>
+        ${ME.role==='admin'?`<button class="btn danger" id="expDelBtn" onclick="bulkDeleteExp()">🗑 Xóa đã chọn</button>
+        <button class="btn" onclick="openExpEdit(null)">+ Thêm người</button>`:''}
       </div>
       <div class="tbl-wrap" style="max-height:46vh"><table>
         <thead><tr>
           <th style="width:34px;text-align:center"><input type="checkbox" id="exp_all" onclick="toggleExpAll(this)"></th>
-          <th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Giới tính</th><th>Địa chỉ</th><th>Trạng thái</th><th></th>
+          <th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Giới tính</th><th>SĐT</th><th>Địa chỉ</th><th>Trạng thái</th><th></th>
         </tr></thead><tbody id="expBody"></tbody></table></div>
-      <p class="hint" style="margin:8px 0 0">Tích chọn để copy nhiều người · nút 📋 mỗi dòng để copy 1 người · dữ liệu copy dạng cột (dán thẳng vào Excel được).</p>
+      <p class="hint" style="margin:8px 0 0">Tích chọn để copy/xóa nhiều người · 📋 copy 1 người${ME.role==='admin'?' · ✎ sửa · 🗑 xóa':''} · dữ liệu copy dạng cột (dán thẳng vào Excel).</p>
     </div>
     <div class="modal-foot">
       <div>${ME.role==='admin'?'<button class="btn danger sm" onclick="clearExpected()">Xóa toàn bộ DS dự kiến</button>':''}</div>
@@ -622,15 +634,19 @@ function renderExpList(){
   const sel=window._exp.selected;
   const rows=expVisibleRows();
   const body=document.getElementById("expBody");
-  if(!rows.length){ body.innerHTML=`<tr><td colspan="10" class="empty">Không có dòng phù hợp.</td></tr>`; updateExpCopyBtn(); return; }
+  if(!rows.length){ body.innerHTML=`<tr><td colspan="11" class="empty">Không có dòng phù hợp.</td></tr>`; updateExpCopyBtn(); return; }
+  const isAdmin=ME.role==='admin';
   body.innerHTML=rows.map(({r,i,stt,came})=>`<tr class="${sel.has(i)?'dup':''}">
     <td style="text-align:center"><input type="checkbox" data-idx="${i}" ${sel.has(i)?'checked':''} onclick="toggleExpRow(${i},this)"></td>
     <td class="mono">${stt}</td><td class="mono">${esc(r.cccd)}</td><td class="mono">${esc(r.ma_bhyt)}</td>
     <td><b>${esc(r.ho_ten)}</b></td><td class="mono">${esc(r.ngay_sinh)}</td>
     <td>${r.gioi_tinh?`<span class="badge ${r.gioi_tinh==='Nam'?'nam':'nu'}">${esc(r.gioi_tinh)}</span>`:''}</td>
+    <td class="mono">${esc(r.so_dien_thoai)}</td>
     <td>${esc(expAddr(r))}</td>
     <td>${came?'<span class="badge nam">✓ Đã đến</span>':'<span class="tag absent">Chưa đến</span>'}</td>
-    <td><button class="icon-btn" title="Copy người này" onclick="copyExpOne(${i})">📋</button></td></tr>`).join("");
+    <td><div class="row-act"><button class="icon-btn" title="Copy người này" onclick="copyExpOne(${i})">📋</button>
+      ${isAdmin?`<button class="icon-btn" title="Sửa" onclick="openExpEdit(${i})">✎</button>
+      <button class="icon-btn del" title="Xóa" onclick="deleteExpItem(${i})">🗑</button>`:''}</div></td></tr>`).join("");
   const all=document.getElementById("exp_all");
   if(all){ const vis=rows.map(x=>x.i); all.checked=vis.length>0&&vis.every(i=>sel.has(i)); }
   updateExpCopyBtn();
@@ -643,7 +659,7 @@ function toggleExpAll(el){ const s=window._exp.selected; expVisibleRows().forEac
 function updateExpCopyBtn(){ const b=document.getElementById("expCopyBtn"); if(!b)return;
   const n=window._exp.selected.size; b.textContent=n?`📋 Copy đã chọn (${n})`:"📋 Copy tất cả (đang lọc)"; }
 
-function expRowText(r){ return [r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,expAddr(r)].join("\t"); }
+function expRowText(r){ return [r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,expAddr(r)].join("\t"); }
 async function copyToClipboard(text){
   try{ await navigator.clipboard.writeText(text); return true; }
   catch{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
@@ -657,23 +673,70 @@ async function copyExpSelected(){
   if(!idxs.length)idxs=expVisibleRows().map(x=>x.i); // không chọn ai → copy tất cả đang lọc
   if(!idxs.length){ toast("Không có dòng nào","err"); return; }
   idxs.sort((a,b)=>a-b);
-  const header=["CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","Địa chỉ"].join("\t");
+  const header=["CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","SĐT","Địa chỉ"].join("\t");
   const text=[header,...idxs.map(i=>expRowText(items[i]))].join("\n");
   if(await copyToClipboard(text))toast(`Đã copy ${idxs.length} người`); else toast("Không copy được","err");
 }
 function exportExpected(){
   const {items,cameSet,g}=window._exp;
-  const head=["STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","Địa chỉ","Trạng thái"];
-  const rows=items.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,expAddr(r),cameSet.has(expKey(r))?"Đã đến":"Chưa đến"]);
+  const head=["STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","SĐT","Địa chỉ","Trạng thái"];
+  const rows=items.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,expAddr(r),cameSet.has(expKey(r))?"Đã đến":"Chưa đến"]);
   const ws=XLSX.utils.aoa_to_sheet([head,...rows]);
-  ws["!cols"]=[6,14,16,24,12,9,32,12].map(w=>({wch:w}));
-  for(let i=1;i<=items.length;i++)["B","C"].forEach(c=>{const cell=ws[c+(i+1)];if(cell){cell.t="s";cell.z="@";}});
+  ws["!cols"]=[6,14,16,24,12,9,13,32,12].map(w=>({wch:w}));
+  for(let i=1;i<=items.length;i++)["B","C","G"].forEach(c=>{const cell=ws[c+(i+1)];if(cell){cell.t="s";cell.z="@";}});
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"DuKien");
   XLSX.writeFile(wb,`DuKien_${g.ma_doan}.xlsx`); toast("Đã xuất DS dự kiến");
 }
 async function clearExpected(){
   if(!confirm("Xóa toàn bộ danh sách dự kiến của đoàn này?"))return;
   try{ await api("PUT",`/api/groups/${state.group.id}/expected`,[]); closeModal(); toast("Đã xóa DS dự kiến"); loadGroups(); }
+  catch(e){ toast(e.message,"err"); }
+}
+/* ----- thêm / sửa / xóa từng người dự kiến (admin) ----- */
+const EXP_FORM=[["ho_ten","Họ tên",2],["ngay_sinh","Ngày sinh (dd/mm/yyyy)",1],["gioi_tinh","Giới tính",1,"sex"],
+  ["cccd","CCCD",1],["ma_bhyt","Mã BHYT",1],["so_dien_thoai","Số điện thoại",1],
+  ["so_nha","Số nhà",1],["khu_pho","Khu phố",1],["phuong","Phường/Xã",1],["tinh","Tỉnh/TP",1]];
+function openExpEdit(idx){
+  const editing=idx!=null?window._exp.items[idx]:null;
+  const fh=EXP_FORM.map(([k,lab,span,type])=>{
+    const v=editing?esc(editing[k]||""):"";
+    let ctrl;
+    if(type==="sex")ctrl=`<select class="select" id="xe_${k}"><option value="">—</option><option ${v==='Nam'?'selected':''}>Nam</option><option ${v==='Nữ'?'selected':''}>Nữ</option></select>`;
+    else ctrl=`<input class="input" id="xe_${k}" value="${v}" autocomplete="off" ${k==='ngay_sinh'?'oninput="maskDate(this)"':''}>`;
+    return `<div class="${span===2?'col2':''}"><label class="f">${lab}</label>${ctrl}</div>`;
+  }).join("");
+  showModal(`<div class="modal-head"><h2>${editing?'Sửa người dự kiến':'Thêm người dự kiến'}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><div class="form-grid">${fh}</div></div>
+    <div class="modal-foot"><span class="hint"><span class="kbd">Enter</span> lưu</span><div style="display:flex;gap:8px">
+      <button class="btn ghost" onclick="closeModal()">Hủy</button>
+      <button class="btn primary" id="xeBtn" onclick="saveExpItem(${editing?editing.id:'null'})">Lưu</button></div></div>`);
+  document.querySelector(".modal").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();saveExpItem(editing?editing.id:null);}});
+  setTimeout(()=>document.getElementById("xe_ho_ten").focus(),50);
+}
+async function saveExpItem(id){
+  const g=k=>{const el=document.getElementById("xe_"+k);return el?el.value.trim():"";};
+  const item={}; EXP_FORM.forEach(([k])=>item[k]=g(k));
+  if(!item.ho_ten){ toast("Họ tên là bắt buộc","err"); return; }
+  if(item.ngay_sinh&&!validDate(item.ngay_sinh)){ toast("Ngày sinh phải dạng dd/mm/yyyy","err"); return; }
+  const btn=document.getElementById("xeBtn"); if(btn)btn.disabled=true;
+  try{
+    if(id) await api("PUT","/api/expected/"+id,item);
+    else await api("POST",`/api/groups/${state.group.id}/expected/item`,item);
+    toast(id?"Đã cập nhật":"Đã thêm người dự kiến"); await openExpected(); loadGroups();
+  }catch(e){ toast(e.message,"err"); if(btn)btn.disabled=false; }
+}
+async function deleteExpItem(idx){
+  const r=window._exp.items[idx];
+  if(!confirm(`Xóa "${r.ho_ten}" khỏi danh sách dự kiến?`))return;
+  try{ await api("DELETE","/api/expected/"+r.id); toast("Đã xóa"); await openExpected(); loadGroups(); }
+  catch(e){ toast(e.message,"err"); }
+}
+async function bulkDeleteExp(){
+  const {items,selected}=window._exp;
+  const ids=[...selected].map(i=>items[i].id).filter(Boolean);
+  if(!ids.length){ toast("Chưa chọn người nào","err"); return; }
+  if(!confirm(`Xóa ${ids.length} người đã chọn khỏi danh sách dự kiến?`))return;
+  try{ await api("POST","/api/expected/bulk_delete",{ids}); toast(`Đã xóa ${ids.length} người`); await openExpected(); loadGroups(); }
   catch(e){ toast(e.message,"err"); }
 }
 
@@ -723,7 +786,8 @@ const ACTION_LABEL={LOGIN:"Đăng nhập",LOGOUT:"Đăng xuất",CHANGE_PASSWORD
   CREATE_RECORD:"Thêm bản ghi",UPDATE_RECORD:"Sửa bản ghi",DELETE_RECORD:"Xóa bản ghi",
   CREATE_GROUP:"Tạo đoàn",UPDATE_GROUP:"Sửa đoàn",DELETE_GROUP:"Xóa đoàn",
   CREATE_USER:"Tạo người dùng",UPDATE_USER:"Sửa người dùng",DELETE_USER:"Xóa người dùng",
-  IMPORT_EXPECTED:"Import DS dự kiến"};
+  IMPORT_EXPECTED:"Import DS dự kiến",CREATE_EXPECTED:"Thêm người dự kiến",
+  UPDATE_EXPECTED:"Sửa người dự kiến",DELETE_EXPECTED:"Xóa người dự kiến"};
 async function renderLogs(){
   const action=document.getElementById("logAction").value;
   let logs; try{ logs=await api("GET","/api/logs?limit=500"+(action?"&action="+action:"")); }catch(e){ toast(e.message,"err"); return; }
