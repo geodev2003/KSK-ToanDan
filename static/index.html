@@ -87,6 +87,8 @@
   tbody td{padding:9px 12px;border-bottom:1px solid #1d2a39}
   tbody tr:hover{background:#1a2837}
   tbody tr.dup{background:rgba(240,169,59,.08)}
+  tbody tr.sel{background:rgba(62,198,192,.10)}
+  tbody tr.sel:hover{background:rgba(62,198,192,.16)}
   .mono{font-family:var(--mono);font-size:12.5px}
   .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
   .badge.nam{background:rgba(79,151,255,.15);color:#8bbcff}
@@ -197,10 +199,12 @@
         <button class="btn" onclick="openExpected()">Xem DS dự kiến</button>
         <button class="btn" onclick="openCompare()">So sánh DS dự kiến</button>
         <button class="btn adminOnly hidden" onclick="importExpectedPrompt()">Nhập DS dự kiến</button>
+        <button class="btn" id="recCopyBtn" onclick="copyRecSelected()">📋 Copy đã chọn</button>
         <button class="btn" onclick="exportExcel()">⤓ Xuất Excel (HIS)</button>
       </div>
       <div class="tbl-wrap">
         <table><thead><tr>
+          <th style="width:34px;text-align:center"><input type="checkbox" id="rec_all" onclick="toggleRecAll(this)"></th>
           <th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Giới tính</th><th>SĐT</th>
           <th>Nghề nghiệp</th><th>Số nhà</th><th>Khu phố</th><th>Phường</th><th>Tỉnh</th>
           <th>Nhận HS</th><th>Thời gian</th><th>Người nhập</th><th></th>
@@ -251,7 +255,7 @@
 const API_BASE = ""; // cùng origin với backend. Nếu tách riêng, đặt vd "http://192.168.56.102:8000"
 let TOKEN = localStorage.getItem("ksk_token") || "";
 let ME = null;
-let state = { view:"groups", group:null, records:[], pollTimer:null, lastMeta:null };
+let state = { view:"groups", group:null, records:[], pollTimer:null, lastMeta:null, recSel:new Set() };
 
 /* ============ API ============ */
 async function api(method, path, body, isForm=false){
@@ -377,6 +381,7 @@ async function deleteGroup(id){
 /* ============ DETAIL / RECORDS ============ */
 function startDetail(){
   const g=state.group;
+  state.recSel=new Set();
   document.getElementById("dTitle").textContent=g.ten_doan;
   document.getElementById("dMeta").innerHTML=`<span class="mono" style="color:var(--teal)">${esc(g.ma_doan)}</span> · 🗓 ${esc(g.thoi_gian_kham||'—')} · 📍 ${esc(g.dia_diem||'—')}`;
   loadRecords();
@@ -413,9 +418,11 @@ function renderRecords(){
   const q=(document.getElementById("recSearch").value||"").toLowerCase();
   let view=records.map((r,i)=>({r,stt:i+1}));
   if(q)view=view.filter(x=>(x.r.ho_ten+x.r.cccd+x.r.ma_bhyt+x.r.so_dien_thoai+x.r.phuong).toLowerCase().includes(q));
+  const sel=state.recSel;
   const body=document.getElementById("recBody");
-  if(!view.length){ body.innerHTML=`<tr><td colspan="16" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`; return; }
-  body.innerHTML=view.map(({r,stt})=>`<tr class="${dupSet.has(r.id)?'dup':''}">
+  if(!view.length){ body.innerHTML=`<tr><td colspan="17" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`; updateRecCopyBtn(); return; }
+  body.innerHTML=view.map(({r,stt})=>`<tr class="${dupSet.has(r.id)?'dup':''}${sel.has(r.id)?' sel':''}">
+    <td style="text-align:center"><input type="checkbox" ${sel.has(r.id)?'checked':''} onclick="toggleRecRow(${r.id},this)"></td>
     <td class="mono">${stt}</td><td class="mono">${esc(r.cccd)}</td><td class="mono">${esc(r.ma_bhyt)}</td>
     <td><b>${esc(r.ho_ten)}</b>${dupSet.has(r.id)?' <span class="badge warn">trùng</span>':''}</td>
     <td class="mono">${esc(r.ngay_sinh)}</td>
@@ -423,8 +430,39 @@ function renderRecords(){
     <td class="mono">${esc(r.so_dien_thoai)}</td>
     <td>${esc(r.nghe_nghiep)}</td><td>${esc(r.so_nha)}</td><td>${esc(r.khu_pho)}</td><td>${esc(r.phuong)}</td><td>${esc(r.tinh)}</td>
     <td>${esc(r.nhan_ho_so)}</td><td class="mono" style="color:var(--muted)">${fmtTime(r.created_at)}</td><td>${esc(r.created_by)}</td>
-    <td><div class="row-act"><button class="icon-btn" title="Sửa" onclick="openEntry(${r.id})">✎</button>
+    <td><div class="row-act"><button class="icon-btn" title="Copy người này" onclick="copyRecOne(${r.id})">📋</button>
+      <button class="icon-btn" title="Sửa" onclick="openEntry(${r.id})">✎</button>
       <button class="icon-btn del" title="Xóa" onclick="delRecord(${r.id})">🗑</button></div></td></tr>`).join("");
+  const all=document.getElementById("rec_all");
+  if(all){ const vis=view.map(x=>x.r.id); all.checked=vis.length>0&&vis.every(id=>sel.has(id)); }
+  updateRecCopyBtn();
+}
+function recVisibleIds(){
+  const q=(document.getElementById("recSearch").value||"").toLowerCase();
+  let view=state.records;
+  if(q)view=view.filter(r=>(r.ho_ten+r.cccd+r.ma_bhyt+r.so_dien_thoai+r.phuong).toLowerCase().includes(q));
+  return view.map(r=>r.id);
+}
+function toggleRecRow(id,el){ const s=state.recSel; if(el.checked)s.add(id);else s.delete(id);
+  el.closest("tr").classList.toggle("sel",el.checked); updateRecCopyBtn();
+  const all=document.getElementById("rec_all"); const vis=recVisibleIds();
+  if(all)all.checked=vis.length>0&&vis.every(x=>s.has(x)); }
+function toggleRecAll(el){ const s=state.recSel; recVisibleIds().forEach(id=>{ el.checked?s.add(id):s.delete(id); }); renderRecords(); }
+function updateRecCopyBtn(){ const b=document.getElementById("recCopyBtn"); if(!b)return;
+  const n=state.recSel.size; b.textContent=n?`📋 Copy đã chọn (${n})`:"📋 Copy tất cả (đang lọc)"; }
+function recRowText(r){ return [r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,
+  r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,r.nhan_ho_so].join("\t"); }
+async function copyRecOne(id){ const r=state.records.find(x=>x.id===id); if(!r)return;
+  if(await copyToClipboard(recRowText(r)))toast("Đã copy: "+r.ho_ten); else toast("Không copy được","err"); }
+async function copyRecSelected(){
+  const sel=state.recSel;
+  let ids=[...sel];
+  if(!ids.length)ids=recVisibleIds(); // không chọn ai → copy tất cả đang lọc
+  if(!ids.length){ toast("Không có dòng nào","err"); return; }
+  const ordered=state.records.filter(r=>ids.includes(r.id)); // giữ đúng thứ tự danh sách
+  const header=["CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","SĐT","Nghề nghiệp","Số nhà","Khu phố","Phường","Tỉnh","Nhận hồ sơ"].join("\t");
+  const text=[header,...ordered.map(recRowText)].join("\n");
+  if(await copyToClipboard(text))toast(`Đã copy ${ordered.length} người`); else toast("Không copy được","err");
 }
 async function delRecord(id){
   if(!confirm("Xóa bản ghi này?"))return;
