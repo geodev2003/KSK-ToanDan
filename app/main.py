@@ -5,7 +5,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import Base, engine, get_db
@@ -19,10 +19,26 @@ from .security import (
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
 
+def _migrate_columns(sync_conn):
+    """Tự thêm cột mới vào bảng cũ (không mất dữ liệu). Chạy cho cả SQLite lẫn Postgres."""
+    insp = inspect(sync_conn)
+    if "expected" not in insp.get_table_names():
+        return
+    existing = {c["name"] for c in insp.get_columns("expected")}
+    needed = {
+        "gioi_tinh": "VARCHAR(8)", "so_nha": "VARCHAR(64)", "khu_pho": "VARCHAR(128)",
+        "phuong": "VARCHAR(128)", "tinh": "VARCHAR(128)", "dia_chi": "VARCHAR(255)",
+    }
+    for name, typ in needed.items():
+        if name not in existing:
+            sync_conn.execute(text(f"ALTER TABLE expected ADD COLUMN {name} {typ} DEFAULT ''"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_migrate_columns)
     # seed default admin if none exists
     from .database import SessionLocal
     async with SessionLocal() as db:
@@ -290,8 +306,13 @@ async def set_expected(request: Request, gid: int, items: list[s.ExpectedItem],
     await db.execute(delete(m.Expected).where(m.Expected.group_id == gid))
     for it in items:
         if it.ho_ten.strip():
-            db.add(m.Expected(group_id=gid, cccd=it.cccd.strip(), ma_bhyt=it.ma_bhyt.strip(),
-                              ho_ten=it.ho_ten.strip(), ngay_sinh=it.ngay_sinh.strip()))
+            db.add(m.Expected(
+                group_id=gid, cccd=it.cccd.strip(), ma_bhyt=it.ma_bhyt.strip(),
+                ho_ten=it.ho_ten.strip(), ngay_sinh=it.ngay_sinh.strip(),
+                gioi_tinh=it.gioi_tinh.strip(), so_nha=it.so_nha.strip(),
+                khu_pho=it.khu_pho.strip(), phuong=it.phuong.strip(),
+                tinh=it.tinh.strip(), dia_chi=it.dia_chi.strip(),
+            ))
     await log_action(db, request, admin, "IMPORT_EXPECTED", "group", g.ma_doan, f"{len(items)} người")
     await db.commit()
     return {"ok": True, "count": len(items)}

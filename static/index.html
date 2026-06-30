@@ -507,7 +507,13 @@ document.getElementById("fileImport").addEventListener("change",e=>{
       const list=rows.map(r=>({cccd:String(find(r,["cccd","cmnd","căncước"])||"").trim(),
         ma_bhyt:String(find(r,["bhyt","thẻ"])||"").trim(),
         ho_ten:String(find(r,["họtên","họvàtên","hoten","tên"])||"").trim(),
-        ngay_sinh:String(find(r,["ngàysinh","namsinh","nămsinh","ngaysinh"])||"").trim()})).filter(x=>x.ho_ten);
+        ngay_sinh:String(find(r,["ngàysinh","namsinh","nămsinh","ngaysinh"])||"").trim(),
+        gioi_tinh:normSex(find(r,["giớitính","gioitinh","gt","phái"])),
+        so_nha:String(find(r,["sốnhà","sonha","địachỉ","diachi","address"])||"").trim(),
+        khu_pho:String(find(r,["khuphố","khupho","ấp","thôn","tổ"])||"").trim(),
+        phuong:String(find(r,["phường","phuong","xã","xa"])||"").trim(),
+        tinh:String(find(r,["tỉnh","tinh","thànhphố","tp"])||"").trim(),
+      })).filter(x=>x.ho_ten);
       await api("PUT",`/api/groups/${state.group.id}/expected`,list);
       toast(`Đã nhập ${list.length} người dự kiến`); loadGroups();
     }catch(err){ toast("Lỗi: "+err.message,"err"); }
@@ -555,6 +561,12 @@ function exportCompare(){
 /* ============ XEM DS DỰ KIẾN ============ */
 function expKey(r){ const c=(r.cccd||"").trim(); if(c.length>=9)return "cccd:"+c;
   return "nb:"+(r.ho_ten||"").trim().toLowerCase()+"|"+(r.ngay_sinh||"").trim(); }
+function normSex(v){ const s=String(v||"").trim().toLowerCase();
+  if(["nam","male","m","1","trai"].includes(s))return "Nam";
+  if(["nữ","nu","female","f","2","gái","gai"].includes(s))return "Nữ"; return String(v||"").trim(); }
+function expAddr(r){ const parts=[r.so_nha,r.khu_pho,r.phuong,r.tinh].map(x=>(x||"").trim()).filter(Boolean);
+  return parts.length?parts.join(", "):(r.dia_chi||"").trim(); }
+
 async function openExpected(){
   let exp,cmp;
   try{ exp=await api("GET",`/api/groups/${state.group.id}/expected`);
@@ -568,7 +580,7 @@ async function openExpected(){
     return;
   }
   const cameSet=new Set(cmp.came.map(expKey));
-  window._exp={items:exp,cameSet,g:state.group};
+  window._exp={items:exp,cameSet,g:state.group,selected:new Set()};
   const came=exp.filter(r=>cameSet.has(expKey(r))).length;
   showModal(`<div class="modal-head"><h2>Danh sách dự kiến — ${esc(state.group.ten_doan)}</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body">
@@ -578,13 +590,17 @@ async function openExpected(){
         <div class="stat"><div class="n" style="color:#ff9b9b">${exp.length-came}</div><div class="l">Chưa đến</div></div></div>
       <div class="toolbar" style="margin-bottom:10px">
         <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input class="input" id="exp_search" placeholder="Tìm tên, CCCD, ngày sinh..." oninput="renderExpList()"></div>
+          <input class="input" id="exp_search" placeholder="Tìm tên, CCCD, ngày sinh, địa chỉ..." oninput="renderExpList()"></div>
         <select class="select" id="exp_filter" style="width:auto" onchange="renderExpList()">
           <option value="">Tất cả</option><option value="absent">Chỉ chưa đến</option><option value="came">Chỉ đã đến</option></select>
+        <button class="btn primary" id="expCopyBtn" onclick="copyExpSelected()">📋 Copy đã chọn</button>
       </div>
       <div class="tbl-wrap" style="max-height:46vh"><table>
-        <thead><tr><th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Trạng thái</th></tr></thead>
-        <tbody id="expBody"></tbody></table></div>
+        <thead><tr>
+          <th style="width:34px;text-align:center"><input type="checkbox" id="exp_all" onclick="toggleExpAll(this)"></th>
+          <th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Giới tính</th><th>Địa chỉ</th><th>Trạng thái</th><th></th>
+        </tr></thead><tbody id="expBody"></tbody></table></div>
+      <p class="hint" style="margin:8px 0 0">Tích chọn để copy nhiều người · nút 📋 mỗi dòng để copy 1 người · dữ liệu copy dạng cột (dán thẳng vào Excel được).</p>
     </div>
     <div class="modal-foot">
       <div>${ME.role==='admin'?'<button class="btn danger sm" onclick="clearExpected()">Xóa toàn bộ DS dự kiến</button>':''}</div>
@@ -592,27 +608,65 @@ async function openExpected(){
         <button class="btn ghost" onclick="closeModal()">Đóng</button></div></div>`,"wide");
   renderExpList();
 }
-function renderExpList(){
+function expVisibleRows(){
   const {items,cameSet}=window._exp;
   const q=(val("exp_search")||"").toLowerCase();
   const fl=val("exp_filter");
-  const body=document.getElementById("expBody");
-  let rows=items.map((r,i)=>({r,stt:i+1,came:cameSet.has(expKey(r))}));
-  if(q)rows=rows.filter(x=>(x.r.ho_ten+x.r.cccd+x.r.ma_bhyt+x.r.ngay_sinh).toLowerCase().includes(q));
+  let rows=items.map((r,i)=>({r,i,stt:i+1,came:cameSet.has(expKey(r))}));
+  if(q)rows=rows.filter(x=>(x.r.ho_ten+x.r.cccd+x.r.ma_bhyt+x.r.ngay_sinh+expAddr(x.r)).toLowerCase().includes(q));
   if(fl==="absent")rows=rows.filter(x=>!x.came);
   if(fl==="came")rows=rows.filter(x=>x.came);
-  if(!rows.length){ body.innerHTML=`<tr><td colspan="6" class="empty">Không có dòng phù hợp.</td></tr>`; return; }
-  body.innerHTML=rows.map(({r,stt,came})=>`<tr>
+  return rows;
+}
+function renderExpList(){
+  const sel=window._exp.selected;
+  const rows=expVisibleRows();
+  const body=document.getElementById("expBody");
+  if(!rows.length){ body.innerHTML=`<tr><td colspan="10" class="empty">Không có dòng phù hợp.</td></tr>`; updateExpCopyBtn(); return; }
+  body.innerHTML=rows.map(({r,i,stt,came})=>`<tr class="${sel.has(i)?'dup':''}">
+    <td style="text-align:center"><input type="checkbox" data-idx="${i}" ${sel.has(i)?'checked':''} onclick="toggleExpRow(${i},this)"></td>
     <td class="mono">${stt}</td><td class="mono">${esc(r.cccd)}</td><td class="mono">${esc(r.ma_bhyt)}</td>
     <td><b>${esc(r.ho_ten)}</b></td><td class="mono">${esc(r.ngay_sinh)}</td>
-    <td>${came?'<span class="badge nam">✓ Đã đến</span>':'<span class="tag absent">Chưa đến</span>'}</td></tr>`).join("");
+    <td>${r.gioi_tinh?`<span class="badge ${r.gioi_tinh==='Nam'?'nam':'nu'}">${esc(r.gioi_tinh)}</span>`:''}</td>
+    <td>${esc(expAddr(r))}</td>
+    <td>${came?'<span class="badge nam">✓ Đã đến</span>':'<span class="tag absent">Chưa đến</span>'}</td>
+    <td><button class="icon-btn" title="Copy người này" onclick="copyExpOne(${i})">📋</button></td></tr>`).join("");
+  const all=document.getElementById("exp_all");
+  if(all){ const vis=rows.map(x=>x.i); all.checked=vis.length>0&&vis.every(i=>sel.has(i)); }
+  updateExpCopyBtn();
+}
+function toggleExpRow(i,el){ const s=window._exp.selected; if(el.checked)s.add(i);else s.delete(i);
+  el.closest("tr").classList.toggle("dup",el.checked); updateExpCopyBtn();
+  const all=document.getElementById("exp_all"); const vis=expVisibleRows().map(x=>x.i);
+  if(all)all.checked=vis.length>0&&vis.every(x=>s.has(x)); }
+function toggleExpAll(el){ const s=window._exp.selected; expVisibleRows().forEach(x=>{ el.checked?s.add(x.i):s.delete(x.i); }); renderExpList(); }
+function updateExpCopyBtn(){ const b=document.getElementById("expCopyBtn"); if(!b)return;
+  const n=window._exp.selected.size; b.textContent=n?`📋 Copy đã chọn (${n})`:"📋 Copy tất cả (đang lọc)"; }
+
+function expRowText(r){ return [r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,expAddr(r)].join("\t"); }
+async function copyToClipboard(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand("copy"); }catch{} ta.remove(); return ok; }
+}
+async function copyExpOne(i){ const r=window._exp.items[i];
+  if(await copyToClipboard(expRowText(r)))toast("Đã copy: "+r.ho_ten); else toast("Không copy được","err"); }
+async function copyExpSelected(){
+  const {items,selected}=window._exp;
+  let idxs=[...selected];
+  if(!idxs.length)idxs=expVisibleRows().map(x=>x.i); // không chọn ai → copy tất cả đang lọc
+  if(!idxs.length){ toast("Không có dòng nào","err"); return; }
+  idxs.sort((a,b)=>a-b);
+  const header=["CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","Địa chỉ"].join("\t");
+  const text=[header,...idxs.map(i=>expRowText(items[i]))].join("\n");
+  if(await copyToClipboard(text))toast(`Đã copy ${idxs.length} người`); else toast("Không copy được","err");
 }
 function exportExpected(){
   const {items,cameSet,g}=window._exp;
-  const head=["STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Trạng thái"];
-  const rows=items.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,cameSet.has(expKey(r))?"Đã đến":"Chưa đến"]);
+  const head=["STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","Địa chỉ","Trạng thái"];
+  const rows=items.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,expAddr(r),cameSet.has(expKey(r))?"Đã đến":"Chưa đến"]);
   const ws=XLSX.utils.aoa_to_sheet([head,...rows]);
-  ws["!cols"]=[6,14,16,24,12,12].map(w=>({wch:w}));
+  ws["!cols"]=[6,14,16,24,12,9,32,12].map(w=>({wch:w}));
   for(let i=1;i<=items.length;i++)["B","C"].forEach(c=>{const cell=ws[c+(i+1)];if(cell){cell.t="s";cell.z="@";}});
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"DuKien");
   XLSX.writeFile(wb,`DuKien_${g.ma_doan}.xlsx`); toast("Đã xuất DS dự kiến");

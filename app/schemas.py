@@ -83,10 +83,18 @@ class RecordOut(RecordBase):
 
 # ---------- Expected ----------
 class ExpectedItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: Optional[int] = None
     cccd: str = ""
     ma_bhyt: str = ""
     ho_ten: str
     ngay_sinh: str = ""
+    gioi_tinh: str = ""
+    so_nha: str = ""
+    khu_pho: str = ""
+    phuong: str = ""
+    tinh: str = ""
+    dia_chi: str = ""
 
 
 # ---------- Logs ----------

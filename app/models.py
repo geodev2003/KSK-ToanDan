@@ -73,6 +73,12 @@ class Expected(Base):
     ma_bhyt: Mapped[str] = mapped_column(String(20), default="")
     ho_ten: Mapped[str] = mapped_column(String(128), default="")
     ngay_sinh: Mapped[str] = mapped_column(String(12), default="")
+    gioi_tinh: Mapped[str] = mapped_column(String(8), default="")
+    so_nha: Mapped[str] = mapped_column(String(64), default="")
+    khu_pho: Mapped[str] = mapped_column(String(128), default="")
+    phuong: Mapped[str] = mapped_column(String(128), default="")
+    tinh: Mapped[str] = mapped_column(String(128), default="")
+    dia_chi: Mapped[str] = mapped_column(String(255), default="")
 
     group: Mapped["Group"] = relationship(back_populates="expected")
 
