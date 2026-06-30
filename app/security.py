@@ -70,6 +70,25 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+# ---------- Granular permissions ----------
+ALL_PERMS = ["create_record", "edit_record", "delete_record", "export", "view_reports", "manage_expected"]
+DEFAULT_USER_PERMS = ["create_record", "edit_record", "export"]
+
+
+def user_can(user: User, perm: str) -> bool:
+    if user.role == "admin":
+        return True
+    return perm in (user.perms or "").split(",")
+
+
+def require_perm(perm: str):
+    async def dep(user: User = Depends(get_current_user)) -> User:
+        if not user_can(user, perm):
+            raise HTTPException(status_code=403, detail="Bạn không có quyền thực hiện thao tác này")
+        return user
+    return dep
+
+
 # ---------- Audit log ----------
 async def log_action(
     db: AsyncSession,

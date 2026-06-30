@@ -130,6 +130,9 @@
   .tag.absent{background:rgba(239,90,90,.16);color:#ff9b9b}
   .tag.extra{background:rgba(240,169,59,.16);color:var(--amber)}
   .log-action{font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#0e1620;border:1px solid var(--line)}
+  .permDim{opacity:.4;pointer-events:none}
+  .bar-track{background:#0e1620;border-radius:5px;height:18px;overflow:hidden;min-width:60px}
+  .bar-fill{background:linear-gradient(90deg,var(--teal-d),var(--teal));height:100%;border-radius:5px}
 </style>
 </head>
 <body>
@@ -163,6 +166,7 @@
   <div class="tabbar">
     <button class="tab active" data-tab="groups" onclick="go('groups')">Đoàn khám</button>
     <button class="tab hidden" data-tab="detail" onclick="go('detail')">Nhập liệu</button>
+    <button class="tab hidden" data-perm="view_reports" data-tab="reports" onclick="go('reports')">Báo cáo</button>
     <button class="tab adminOnly hidden" data-tab="users" onclick="go('users')">Người dùng</button>
     <button class="tab adminOnly hidden" data-tab="logs" onclick="go('logs')">Nhật ký</button>
   </div>
@@ -195,12 +199,12 @@
       <div class="toolbar">
         <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           <input class="input" id="recSearch" placeholder="Tìm theo tên, CCCD, BHYT..." oninput="renderRecords()"></div>
-        <button class="btn primary" onclick="openEntry()">⊕ Nhập nhanh <span class="kbd" style="margin-left:4px">F2</span></button>
+        <button class="btn primary hidden" data-perm="create_record" onclick="openEntry()">⊕ Nhập nhanh <span class="kbd" style="margin-left:4px">F2</span></button>
         <button class="btn" onclick="openExpected()">Xem DS dự kiến</button>
         <button class="btn" onclick="openCompare()">So sánh DS dự kiến</button>
-        <button class="btn adminOnly hidden" onclick="importExpectedPrompt()">Nhập DS dự kiến</button>
+        <button class="btn hidden" data-perm="manage_expected" onclick="importExpectedPrompt()">Nhập DS dự kiến</button>
         <button class="btn" id="recCopyBtn" onclick="copyRecSelected()">📋 Copy đã chọn</button>
-        <button class="btn" onclick="exportExcel()">⤓ Xuất Excel (HIS)</button>
+        <button class="btn hidden" data-perm="export" onclick="exportExcel()">⤓ Xuất Excel (HIS)</button>
       </div>
       <div class="tbl-wrap">
         <table><thead><tr>
@@ -243,6 +247,21 @@
       <div class="tbl-wrap" style="max-height:calc(100vh - 220px)"><table>
         <thead><tr><th>Thời gian</th><th>Người dùng</th><th>Vai trò</th><th>Hành động</th><th>Đối tượng</th><th>Chi tiết</th><th>IP</th></tr></thead>
         <tbody id="logBody"></tbody></table></div>
+    </section>
+
+    <!-- REPORTS -->
+    <section id="view-reports" class="hidden">
+      <div class="toolbar">
+        <h2 style="margin:0;font-size:17px">Báo cáo thống kê</h2>
+        <select class="select" id="rp_period" style="width:auto" onchange="loadReport()">
+          <option value="day">Theo ngày</option><option value="week">Theo tuần</option><option value="month">Theo tháng</option></select>
+        <span class="hint">Từ</span><input type="date" class="input" id="rp_from" style="width:auto" onchange="loadReport()">
+        <span class="hint">đến</span><input type="date" class="input" id="rp_to" style="width:auto" onchange="loadReport()">
+        <select class="select" id="rp_group" style="width:auto" onchange="loadReport()"><option value="">Tất cả đoàn</option></select>
+        <button class="btn primary" onclick="loadReport()">Xem</button>
+        <button class="btn" onclick="exportReport()">⤓ Xuất Excel</button>
+      </div>
+      <div id="reportBody"></div>
     </section>
   </main>
 </div>
@@ -297,8 +316,13 @@ async function afterLogin(){
   document.getElementById("userPill").textContent=ME.full_name||ME.username;
   const rp=document.getElementById("rolePill"); rp.textContent=ME.role; rp.className="role-badge "+ME.role;
   document.querySelectorAll(".adminOnly").forEach(el=>el.classList.toggle("hidden",ME.role!=="admin"));
+  applyPerms();
   go("groups");
 }
+const PERMS=[["create_record","Thêm bản ghi"],["edit_record","Sửa bản ghi"],["delete_record","Xóa bản ghi"],
+  ["export","Xuất Excel"],["view_reports","Xem báo cáo"],["manage_expected","Quản lý DS dự kiến"]];
+function can(p){ return !!(ME && (ME.role==="admin" || (ME.perms||"").split(",").includes(p))); }
+function applyPerms(){ document.querySelectorAll("[data-perm]").forEach(el=>el.classList.toggle("hidden",!can(el.dataset.perm))); }
 function logout(){ doLogout(false); }
 function doLogout(expired){
   if(state.pollTimer)clearInterval(state.pollTimer);
@@ -315,13 +339,14 @@ document.getElementById("lgUser").addEventListener("keydown",e=>{if(e.key==="Ent
 function go(view){
   state.view=view;
   if(state.pollTimer){ clearInterval(state.pollTimer); state.pollTimer=null; }
-  ["groups","detail","users","logs"].forEach(v=>document.getElementById("view-"+v).classList.toggle("hidden",v!==view));
+  ["groups","detail","users","logs","reports"].forEach(v=>document.getElementById("view-"+v).classList.toggle("hidden",v!==view));
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.tab===view));
   document.querySelector('.tab[data-tab="detail"]').classList.toggle("hidden",!state.group);
   const bc=document.getElementById("bcrumb");
   if(view==="groups"){ bc.textContent="Danh sách đoàn khám"; loadGroups(); }
   if(view==="users"){ bc.textContent="Người dùng"; renderUsers(); }
   if(view==="logs"){ bc.textContent="Nhật ký"; renderLogs(); }
+  if(view==="reports"){ bc.textContent="Báo cáo"; openReports(); }
   if(view==="detail"&&state.group){ bc.textContent=state.group.ten_doan; startDetail(); }
 }
 
@@ -431,8 +456,8 @@ function renderRecords(){
     <td>${esc(r.nghe_nghiep)}</td><td>${esc(r.so_nha)}</td><td>${esc(r.khu_pho)}</td><td>${esc(r.phuong)}</td><td>${esc(r.tinh)}</td>
     <td>${esc(r.nhan_ho_so)}</td><td class="mono" style="color:var(--muted)">${fmtTime(r.created_at)}</td><td>${esc(r.created_by)}</td>
     <td><div class="row-act"><button class="icon-btn" title="Copy người này" onclick="copyRecOne(${r.id})">📋</button>
-      <button class="icon-btn" title="Sửa" onclick="openEntry(${r.id})">✎</button>
-      <button class="icon-btn del" title="Xóa" onclick="delRecord(${r.id})">🗑</button></div></td></tr>`).join("");
+      ${can('edit_record')?`<button class="icon-btn" title="Sửa" onclick="openEntry(${r.id})">✎</button>`:''}
+      ${can('delete_record')?`<button class="icon-btn del" title="Xóa" onclick="delRecord(${r.id})">🗑</button>`:''}</div></td></tr>`).join("");
   const all=document.getElementById("rec_all");
   if(all){ const vis=view.map(x=>x.r.id); all.checked=vis.length>0&&vis.every(id=>sel.has(id)); }
   updateRecCopyBtn();
@@ -573,7 +598,7 @@ async function openCompare(){
   if(cmp.expected_total===0){
     showModal(`<div class="modal-head"><h2>So sánh DS dự kiến</h2><button class="x" onclick="closeModal()">×</button></div>
       <div class="modal-body"><div class="empty"><div class="big">📥</div>Chưa có danh sách dự kiến cho đoàn này.<br><br>
-      ${ME.role==='admin'?'Nhấn <b>Nhập DS dự kiến</b> ở thanh công cụ để tải Excel lên.':'Liên hệ admin để import danh sách dự kiến.'}</div></div>
+      ${can('manage_expected')?'Nhấn <b>Nhập DS dự kiến</b> ở thanh công cụ để tải Excel lên.':'Bạn không có quyền quản lý danh sách dự kiến.'}</div></div>
       <div class="modal-foot"><span></span><button class="btn ghost" onclick="closeModal()">Đóng</button></div>`);
     return;
   }
@@ -623,7 +648,7 @@ async function openExpected(){
   if(!exp.length){
     showModal(`<div class="modal-head"><h2>Danh sách dự kiến</h2><button class="x" onclick="closeModal()">×</button></div>
       <div class="modal-body"><div class="empty"><div class="big">📥</div>Chưa có danh sách dự kiến cho đoàn này.<br><br>
-      ${ME.role==='admin'?'Nhấn <b>Nhập DS dự kiến</b> ở thanh công cụ để tải Excel lên.':'Liên hệ admin để import danh sách dự kiến.'}</div></div>
+      ${can('manage_expected')?'Nhấn <b>Nhập DS dự kiến</b> ở thanh công cụ để tải Excel lên.':'Bạn không có quyền quản lý danh sách dự kiến.'}</div></div>
       <div class="modal-foot"><span></span><button class="btn ghost" onclick="closeModal()">Đóng</button></div>`);
     return;
   }
@@ -642,7 +667,7 @@ async function openExpected(){
         <select class="select" id="exp_filter" style="width:auto" onchange="renderExpList()">
           <option value="">Tất cả</option><option value="absent">Chỉ chưa đến</option><option value="came">Chỉ đã đến</option></select>
         <button class="btn primary" id="expCopyBtn" onclick="copyExpSelected()">📋 Copy đã chọn</button>
-        ${ME.role==='admin'?`<button class="btn danger" id="expDelBtn" onclick="bulkDeleteExp()">🗑 Xóa đã chọn</button>
+        ${can('manage_expected')?`<button class="btn danger" id="expDelBtn" onclick="bulkDeleteExp()">🗑 Xóa đã chọn</button>
         <button class="btn" onclick="openExpEdit(null)">+ Thêm người</button>`:''}
       </div>
       <div class="tbl-wrap" style="max-height:46vh"><table>
@@ -650,10 +675,10 @@ async function openExpected(){
           <th style="width:34px;text-align:center"><input type="checkbox" id="exp_all" onclick="toggleExpAll(this)"></th>
           <th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Giới tính</th><th>SĐT</th><th>Địa chỉ</th><th>Trạng thái</th><th></th>
         </tr></thead><tbody id="expBody"></tbody></table></div>
-      <p class="hint" style="margin:8px 0 0">Tích chọn để copy/xóa nhiều người · 📋 copy 1 người${ME.role==='admin'?' · ✎ sửa · 🗑 xóa':''} · dữ liệu copy dạng cột (dán thẳng vào Excel).</p>
+      <p class="hint" style="margin:8px 0 0">Tích chọn để copy/xóa nhiều người · 📋 copy 1 người${can('manage_expected')?' · ✎ sửa · 🗑 xóa':''} · dữ liệu copy dạng cột (dán thẳng vào Excel).</p>
     </div>
     <div class="modal-foot">
-      <div>${ME.role==='admin'?'<button class="btn danger sm" onclick="clearExpected()">Xóa toàn bộ DS dự kiến</button>':''}</div>
+      <div>${can('manage_expected')?'<button class="btn danger sm" onclick="clearExpected()">Xóa toàn bộ DS dự kiến</button>':''}</div>
       <div style="display:flex;gap:8px"><button class="btn" onclick="exportExpected()">⤓ Xuất Excel</button>
         <button class="btn ghost" onclick="closeModal()">Đóng</button></div></div>`,"wide");
   renderExpList();
@@ -673,7 +698,7 @@ function renderExpList(){
   const rows=expVisibleRows();
   const body=document.getElementById("expBody");
   if(!rows.length){ body.innerHTML=`<tr><td colspan="11" class="empty">Không có dòng phù hợp.</td></tr>`; updateExpCopyBtn(); return; }
-  const isAdmin=ME.role==='admin';
+  const isAdmin=can('manage_expected');
   body.innerHTML=rows.map(({r,i,stt,came})=>`<tr class="${sel.has(i)?'dup':''}">
     <td style="text-align:center"><input type="checkbox" data-idx="${i}" ${sel.has(i)?'checked':''} onclick="toggleExpRow(${i},this)"></td>
     <td class="mono">${stt}</td><td class="mono">${esc(r.cccd)}</td><td class="mono">${esc(r.ma_bhyt)}</td>
@@ -781,38 +806,60 @@ async function bulkDeleteExp(){
 /* ============ USERS (admin) ============ */
 async function renderUsers(){
   let users; try{ users=await api("GET","/api/users"); }catch(e){ toast(e.message,"err"); return; }
+  const permLabel=p=>(PERMS.find(x=>x[0]===p)||[p,p])[1];
   document.getElementById("userBody").innerHTML=users.map(u=>`<tr>
     <td class="mono" style="color:var(--teal)">${esc(u.username)}</td><td>${esc(u.full_name||'—')}</td>
     <td><span class="role-badge ${u.role}">${u.role}</span></td>
+    <td>${u.role==='admin'?'<span class="hint">Toàn quyền</span>':(u.perms?u.perms.split(',').filter(Boolean).map(p=>`<span class="badge nam" style="margin:1px">${esc(permLabel(p))}</span>`).join(' '):'<span class="hint">—</span>')}</td>
     <td>${u.is_active?'<span class="badge nam">Hoạt động</span>':'<span class="badge warn">Khóa</span>'}</td>
     <td class="mono" style="color:var(--muted)">${fmtTime(u.created_at)}</td>
     <td><div class="row-act"><button class="icon-btn" title="Sửa" onclick='openUserModal(${JSON.stringify(u)})'>✎</button>
       <button class="icon-btn del" title="Xóa" onclick="deleteUser(${u.id})">🗑</button></div></td></tr>`).join("");
 }
+function renderPermBoxes(perms,role){
+  const checked=new Set(perms||[]);
+  return `<div id="permWrap" class="${role==='admin'?'permDim':''}" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px">
+    ${PERMS.map(([k,lab])=>`<label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);font-weight:500;cursor:pointer">
+      <input type="checkbox" class="permbox" value="${k}" ${checked.has(k)?'checked':''}> ${lab}</label>`).join("")}
+  </div>
+  <p class="hint" id="permNote" style="margin:8px 0 0">${role==='admin'?'Admin có toàn quyền — các quyền dưới đây bị bỏ qua.':'Chọn những thao tác người dùng này được phép làm.'}</p>`;
+}
 function openUserModal(u=null){
   const edit=!!u;
+  const role=edit?u.role:'user';
+  const perms=edit?(u.perms||'').split(',').filter(Boolean):['create_record','edit_record','export'];
   showModal(`<div class="modal-head"><h2>${edit?'Sửa người dùng':'Thêm người dùng'}</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body"><div class="form-grid">
       <div><label class="f">Tài khoản *</label><input class="input" id="u_user" value="${edit?esc(u.username):''}" ${edit?'disabled':''}></div>
       <div class="col2"><label class="f">Họ tên</label><input class="input" id="u_name" value="${edit?esc(u.full_name||''):''}"></div>
-      <div><label class="f">Vai trò</label><select class="select" id="u_role">
-        <option value="user" ${edit&&u.role==='user'?'selected':''}>user</option>
-        <option value="admin" ${edit&&u.role==='admin'?'selected':''}>admin</option></select></div>
+      <div><label class="f">Vai trò</label><select class="select" id="u_role" onchange="onRoleChange()">
+        <option value="user" ${role==='user'?'selected':''}>user</option>
+        <option value="admin" ${role==='admin'?'selected':''}>admin</option></select></div>
       <div><label class="f">${edit?'Mật khẩu mới (bỏ trống = giữ)':'Mật khẩu *'}</label><input class="input" id="u_pass" type="password"></div>
       ${edit?`<div><label class="f">Trạng thái</label><select class="select" id="u_active">
         <option value="1" ${u.is_active?'selected':''}>Hoạt động</option><option value="0" ${!u.is_active?'selected':''}>Khóa</option></select></div>`:''}
-    </div></div>
+    </div>
+    <div style="margin-top:16px"><label class="f">Phân quyền</label><div id="permArea">${renderPermBoxes(perms,role)}</div></div>
+    </div>
     <div class="modal-foot"><span></span><div style="display:flex;gap:8px">
       <button class="btn ghost" onclick="closeModal()">Hủy</button>
       <button class="btn primary" onclick="saveUser(${edit?u.id:'null'})">Lưu</button></div></div>`);
   setTimeout(()=>document.getElementById(edit?"u_name":"u_user").focus(),50);
 }
+function onRoleChange(){
+  const role=val("u_role");
+  const wrap=document.getElementById("permWrap"); const note=document.getElementById("permNote");
+  if(wrap)wrap.classList.toggle("permDim",role==='admin');
+  if(note)note.textContent=role==='admin'?'Admin có toàn quyền — các quyền dưới đây bị bỏ qua.':'Chọn những thao tác người dùng này được phép làm.';
+}
 async function saveUser(id){
+  const role=val("u_role");
+  const perms=[...document.querySelectorAll(".permbox")].filter(c=>c.checked).map(c=>c.value);
   try{
-    if(id){ const p={full_name:val("u_name"),role:val("u_role"),is_active:val("u_active")==="1"};
+    if(id){ const p={full_name:val("u_name"),role,is_active:val("u_active")==="1",perms};
       const pw=val("u_pass"); if(pw)p.password=pw; await api("PUT","/api/users/"+id,p); }
     else{ const u=val("u_user"),pw=val("u_pass"); if(!u||!pw){toast("Tài khoản và mật khẩu là bắt buộc","err");return;}
-      await api("POST","/api/users",{username:u,full_name:val("u_name"),password:pw,role:val("u_role")}); }
+      await api("POST","/api/users",{username:u,full_name:val("u_name"),password:pw,role,perms}); }
     closeModal(); toast("Đã lưu người dùng"); renderUsers();
   }catch(e){ toast(e.message,"err"); }
 }
@@ -851,6 +898,78 @@ function openChangePw(){
 async function changePw(){
   try{ await api("POST","/api/me/password",{old_password:val("pw_old"),new_password:val("pw_new")});
     closeModal(); toast("Đã đổi mật khẩu"); }catch(e){ toast(e.message,"err"); }
+}
+
+/* ============ BÁO CÁO ============ */
+async function openReports(){
+  if(!GROUPS.length){ try{ GROUPS=await api("GET","/api/groups"); }catch{} }
+  const sel=document.getElementById("rp_group");
+  sel.innerHTML='<option value="">Tất cả đoàn</option>'+GROUPS.map(g=>`<option value="${g.id}">${esc(g.ma_doan)} — ${esc(g.ten_doan)}</option>`).join("");
+  const from=document.getElementById("rp_from"), to=document.getElementById("rp_to");
+  if(!to.value){ const t=new Date(); to.value=t.toISOString().slice(0,10);
+    const f=new Date(t.getTime()-29*86400000); from.value=f.toISOString().slice(0,10); }
+  loadReport();
+}
+async function loadReport(){
+  const period=val("rp_period")||"day";
+  const from=document.getElementById("rp_from").value, to=document.getElementById("rp_to").value;
+  const gid=document.getElementById("rp_group").value;
+  let qs=`?period=${period}`; if(from)qs+=`&date_from=${from}`; if(to)qs+=`&date_to=${to}`; if(gid)qs+=`&group_id=${gid}`;
+  let rep; try{ rep=await api("GET","/api/reports"+qs); }catch(e){ toast(e.message,"err"); return; }
+  window._rep=rep; renderReport(rep);
+}
+function renderReport(rep){
+  const pLabel={day:"ngày",week:"tuần",month:"tháng"}[rep.period]||"";
+  const maxC=Math.max(1,...rep.series.map(x=>x.count));
+  const seriesRows=rep.series.length?rep.series.map(b=>`<tr>
+    <td>${esc(b.label)}</td>
+    <td style="width:40%"><div class="bar-track"><div class="bar-fill" style="width:${Math.round(b.count/maxC*100)}%"></div></div></td>
+    <td class="mono" style="text-align:right"><b>${b.count}</b></td>
+    <td class="mono" style="text-align:right;color:#8bbcff">${b.male}</td>
+    <td class="mono" style="text-align:right;color:#bda8ff">${b.female}</td></tr>`).join(""):`<tr><td colspan="5" class="empty">Không có dữ liệu trong khoảng đã chọn.</td></tr>`;
+  const groupRows=rep.by_group.length?rep.by_group.map(g=>`<tr>
+    <td class="mono" style="color:var(--teal)">${esc(g.ma_doan)}</td><td>${esc(g.ten_doan)}</td>
+    <td class="mono" style="text-align:right"><b>${g.count}</b></td>
+    <td class="mono" style="text-align:right;color:#8bbcff">${g.male}</td>
+    <td class="mono" style="text-align:right;color:#bda8ff">${g.female}</td></tr>`).join(""):`<tr><td colspan="5" class="empty">—</td></tr>`;
+  document.getElementById("reportBody").innerHTML=`
+    <div class="stat-row">
+      <div class="stat total"><div class="n">${rep.total}</div><div class="l">Tổng đã nhập</div></div>
+      <div class="stat male"><div class="n">${rep.male}</div><div class="l">Nam</div></div>
+      <div class="stat female"><div class="n">${rep.female}</div><div class="l">Nữ</div></div>
+      <div class="stat"><div class="n" style="font-size:16px">${esc(rep.from)}<br>→ ${esc(rep.to)}</div><div class="l">Khoảng thời gian</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px">
+      <div>
+        <h3 style="font-size:14px;margin:0 0 8px">Số lượng theo ${pLabel}</h3>
+        <div class="tbl-wrap" style="max-height:46vh"><table>
+          <thead><tr><th>Kỳ</th><th>Biểu đồ</th><th style="text-align:right">SL</th><th style="text-align:right">Nam</th><th style="text-align:right">Nữ</th></tr></thead>
+          <tbody>${seriesRows}</tbody></table></div>
+      </div>
+      <div>
+        <h3 style="font-size:14px;margin:0 0 8px">Số lượng theo đoàn</h3>
+        <div class="tbl-wrap" style="max-height:46vh"><table>
+          <thead><tr><th>Mã đoàn</th><th>Tên đoàn</th><th style="text-align:right">SL</th><th style="text-align:right">Nam</th><th style="text-align:right">Nữ</th></tr></thead>
+          <tbody>${groupRows}</tbody></table></div>
+      </div>
+    </div>`;
+}
+function exportReport(){
+  const rep=window._rep; if(!rep){ toast("Chưa có dữ liệu báo cáo","err"); return; }
+  const pLabel={day:"ngày",week:"tuần",month:"tháng"}[rep.period]||rep.period;
+  const wb=XLSX.utils.book_new();
+  const sum=[["BÁO CÁO THỐNG KÊ KHÁM SỨC KHỎE"],[],
+    ["Khoảng thời gian",`${rep.from} → ${rep.to}`],["Gộp theo",pLabel],
+    ["Tổng đã nhập",rep.total],["Nam",rep.male],["Nữ",rep.female]];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),"TongHop");
+  const sh=[["Kỳ","Số lượng","Nam","Nữ"],...rep.series.map(b=>[b.label,b.count,b.male,b.female])];
+  const ws1=XLSX.utils.aoa_to_sheet(sh); ws1["!cols"]=[{wch:28},{wch:10},{wch:8},{wch:8}];
+  XLSX.utils.book_append_sheet(wb,ws1,"TheoThoiGian");
+  const gh=[["Mã đoàn","Tên đoàn","Số lượng","Nam","Nữ"],...rep.by_group.map(g=>[g.ma_doan,g.ten_doan,g.count,g.male,g.female])];
+  const ws2=XLSX.utils.aoa_to_sheet(gh); ws2["!cols"]=[{wch:12},{wch:30},{wch:10},{wch:8},{wch:8}];
+  XLSX.utils.book_append_sheet(wb,ws2,"TheoDoan");
+  XLSX.writeFile(wb,`BaoCao_${rep.period}_${rep.from}_${rep.to}.xlsx`);
+  toast("Đã xuất báo cáo");
 }
 
 /* ============ MODAL + UTILS ============ */

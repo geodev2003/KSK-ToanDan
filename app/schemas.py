@@ -18,6 +18,7 @@ class UserOut(BaseModel):
     username: str
     full_name: str
     role: str
+    perms: str = ""
     is_active: bool
     created_at: datetime
 
@@ -27,6 +28,7 @@ class UserCreate(BaseModel):
     full_name: str = ""
     password: str
     role: str = "user"
+    perms: Optional[list[str]] = None
 
 
 class UserUpdate(BaseModel):
@@ -34,6 +36,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    perms: Optional[list[str]] = None
 
 
 # ---------- Group ----------

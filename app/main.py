@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone, date as _date
 
 from fastapi import FastAPI, Depends, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,7 @@ from . import schemas as s
 from .security import (
     hash_password, verify_password, create_token,
     get_current_user, require_admin, log_action,
+    require_perm, user_can, ALL_PERMS, DEFAULT_USER_PERMS,
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
@@ -30,6 +32,7 @@ def _migrate_columns(sync_conn):
             "so_dien_thoai": "VARCHAR(20)",
         },
         "records": {"so_dien_thoai": "VARCHAR(20)"},
+        "users": {"perms": "VARCHAR(255)"},
     }
     for table, cols in plan.items():
         if table not in tables:
@@ -38,6 +41,11 @@ def _migrate_columns(sync_conn):
         for name, typ in cols.items():
             if name not in existing:
                 sync_conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {typ} DEFAULT ''"))
+                # user cũ (trước khi có phân quyền) được cấp bộ quyền mặc định để vẫn dùng được
+                if table == "users" and name == "perms":
+                    sync_conn.execute(text(
+                        "UPDATE users SET perms = :p WHERE role <> 'admin' AND (perms IS NULL OR perms = '')"
+                    ), {"p": ",".join(DEFAULT_USER_PERMS)})
 
 
 @asynccontextmanager
@@ -120,8 +128,10 @@ async def create_user(request: Request, payload: s.UserCreate,
         raise HTTPException(status_code=409, detail="Tên đăng nhập đã tồn tại")
     if payload.role not in ("admin", "user"):
         raise HTTPException(status_code=400, detail="Vai trò không hợp lệ")
+    perms = payload.perms if payload.perms is not None else DEFAULT_USER_PERMS
+    perms_csv = ",".join(p for p in perms if p in ALL_PERMS)
     user = m.User(username=payload.username.strip(), full_name=payload.full_name.strip(),
-                  hashed_password=hash_password(payload.password), role=payload.role)
+                  hashed_password=hash_password(payload.password), role=payload.role, perms=perms_csv)
     db.add(user)
     await log_action(db, request, admin, "CREATE_USER", "user", payload.username,
                      f"role={payload.role}")
@@ -141,6 +151,7 @@ async def update_user(request: Request, uid: int, payload: s.UserUpdate,
     if payload.role in ("admin", "user"): user.role = payload.role
     if payload.is_active is not None: user.is_active = payload.is_active
     if payload.password: user.hashed_password = hash_password(payload.password)
+    if payload.perms is not None: user.perms = ",".join(p for p in payload.perms if p in ALL_PERMS)
     await log_action(db, request, admin, "UPDATE_USER", "user", user.username)
     await db.commit()
     await db.refresh(user)
@@ -242,7 +253,7 @@ async def list_records(gid: int, db: AsyncSession = Depends(get_db), _: m.User =
 @app.post("/api/groups/{gid}/records", response_model=s.RecordOut)
 async def create_record(request: Request, gid: int, payload: s.RecordBase,
                         force: bool = Query(False),
-                        user: m.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+                        user: m.User = Depends(require_perm("create_record")), db: AsyncSession = Depends(get_db)):
     g = await db.scalar(select(m.Group).where(m.Group.id == gid))
     if not g:
         raise HTTPException(status_code=404, detail="Không tìm thấy đoàn khám")
@@ -270,7 +281,7 @@ async def create_record(request: Request, gid: int, payload: s.RecordBase,
 
 @app.put("/api/records/{rid}", response_model=s.RecordOut)
 async def update_record(request: Request, rid: int, payload: s.RecordBase,
-                        user: m.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+                        user: m.User = Depends(require_perm("edit_record")), db: AsyncSession = Depends(get_db)):
     rec = await db.scalar(select(m.Record).where(m.Record.id == rid))
     if not rec:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi")
@@ -285,7 +296,7 @@ async def update_record(request: Request, rid: int, payload: s.RecordBase,
 
 @app.delete("/api/records/{rid}")
 async def delete_record(request: Request, rid: int,
-                        user: m.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+                        user: m.User = Depends(require_perm("delete_record")), db: AsyncSession = Depends(get_db)):
     rec = await db.scalar(select(m.Record).where(m.Record.id == rid))
     if not rec:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi")
@@ -309,7 +320,7 @@ EXP_FIELDS = ["cccd", "ma_bhyt", "ho_ten", "ngay_sinh", "gioi_tinh",
 
 @app.put("/api/groups/{gid}/expected")
 async def set_expected(request: Request, gid: int, items: list[s.ExpectedItem],
-                       admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                       admin: m.User = Depends(require_perm("manage_expected")), db: AsyncSession = Depends(get_db)):
     g = await db.scalar(select(m.Group).where(m.Group.id == gid))
     if not g:
         raise HTTPException(status_code=404, detail="Không tìm thấy đoàn khám")
@@ -324,7 +335,7 @@ async def set_expected(request: Request, gid: int, items: list[s.ExpectedItem],
 
 @app.post("/api/groups/{gid}/expected/item", response_model=s.ExpectedItem)
 async def add_expected_item(request: Request, gid: int, payload: s.ExpectedItem,
-                            admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                            admin: m.User = Depends(require_perm("manage_expected")), db: AsyncSession = Depends(get_db)):
     g = await db.scalar(select(m.Group).where(m.Group.id == gid))
     if not g:
         raise HTTPException(status_code=404, detail="Không tìm thấy đoàn khám")
@@ -340,7 +351,7 @@ async def add_expected_item(request: Request, gid: int, payload: s.ExpectedItem,
 
 @app.put("/api/expected/{eid}", response_model=s.ExpectedItem)
 async def update_expected_item(request: Request, eid: int, payload: s.ExpectedItem,
-                               admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                               admin: m.User = Depends(require_perm("manage_expected")), db: AsyncSession = Depends(get_db)):
     e = await db.scalar(select(m.Expected).where(m.Expected.id == eid))
     if not e:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi dự kiến")
@@ -356,7 +367,7 @@ async def update_expected_item(request: Request, eid: int, payload: s.ExpectedIt
 
 @app.delete("/api/expected/{eid}")
 async def delete_expected_item(request: Request, eid: int,
-                               admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                               admin: m.User = Depends(require_perm("manage_expected")), db: AsyncSession = Depends(get_db)):
     e = await db.scalar(select(m.Expected).where(m.Expected.id == eid))
     if not e:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi dự kiến")
@@ -369,7 +380,7 @@ async def delete_expected_item(request: Request, eid: int,
 
 @app.post("/api/expected/bulk_delete")
 async def bulk_delete_expected(request: Request, payload: dict,
-                               admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+                               admin: m.User = Depends(require_perm("manage_expected")), db: AsyncSession = Depends(get_db)):
     ids = [int(x) for x in (payload.get("ids") or [])]
     if not ids:
         return {"ok": True, "deleted": 0}
@@ -416,6 +427,84 @@ async def get_logs(limit: int = Query(200, le=1000), offset: int = 0,
     q = q.limit(limit).offset(offset)
     res = await db.execute(q)
     return res.scalars().all()
+
+
+# =================== REPORTS ===================
+VN_OFFSET = timedelta(hours=7)  # Asia/Ho_Chi_Minh
+
+
+def _to_local(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt + VN_OFFSET
+
+
+def _bucket(local_dt, period):
+    d = local_dt.date()
+    if period == "month":
+        return f"{d.year}-{d.month:02d}", f"Tháng {d.month:02d}/{d.year}"
+    if period == "week":
+        iso = d.isocalendar()
+        monday = d - timedelta(days=d.weekday())
+        return monday.isoformat(), f"Tuần {iso[1]:02d}/{iso[0]} (từ {monday.strftime('%d/%m')})"
+    return d.isoformat(), d.strftime("%d/%m/%Y")  # day
+
+
+@app.get("/api/reports")
+async def reports(period: str = "day", date_from: str = "", date_to: str = "",
+                  group_id: int | None = None,
+                  user: m.User = Depends(require_perm("view_reports")),
+                  db: AsyncSession = Depends(get_db)):
+    if period not in ("day", "week", "month"):
+        period = "day"
+    today = (datetime.now(timezone.utc) + VN_OFFSET).date()
+    try:
+        to_d = _date.fromisoformat(date_to) if date_to else today
+    except ValueError:
+        to_d = today
+    try:
+        from_d = _date.fromisoformat(date_from) if date_from else (to_d - timedelta(days=29))
+    except ValueError:
+        from_d = to_d - timedelta(days=29)
+
+    # lấy dữ liệu tối thiểu, gộp trong Python (tránh lệ thuộc cú pháp ngày của từng DB)
+    q = select(m.Record.created_at, m.Record.gioi_tinh, m.Record.group_id)
+    if group_id:
+        q = q.where(m.Record.group_id == group_id)
+    rows = (await db.execute(q)).all()
+
+    groups = {g.id: g for g in (await db.execute(select(m.Group))).scalars().all()}
+
+    series = {}   # key -> dict(count,male,female,label,sort)
+    by_group = {}  # gid -> dict
+    total = male = female = 0
+    for created_at, gt, gid in rows:
+        loc = _to_local(created_at)
+        if loc is None:
+            continue
+        d = loc.date()
+        if d < from_d or d > to_d:
+            continue
+        total += 1
+        is_m = gt == "Nam"; is_f = gt == "Nữ"
+        male += is_m; female += is_f
+        key, label = _bucket(loc, period)
+        b = series.setdefault(key, {"key": key, "label": label, "count": 0, "male": 0, "female": 0})
+        b["count"] += 1; b["male"] += is_m; b["female"] += is_f
+        g = groups.get(gid)
+        gk = by_group.setdefault(gid, {
+            "ma_doan": g.ma_doan if g else "?", "ten_doan": g.ten_doan if g else "(đã xóa)",
+            "count": 0, "male": 0, "female": 0})
+        gk["count"] += 1; gk["male"] += is_m; gk["female"] += is_f
+
+    return {
+        "period": period, "from": from_d.isoformat(), "to": to_d.isoformat(),
+        "total": total, "male": male, "female": female,
+        "series": sorted(series.values(), key=lambda x: x["key"]),
+        "by_group": sorted(by_group.values(), key=lambda x: -x["count"]),
+    }
 
 
 # =================== STATIC FRONTEND ===================

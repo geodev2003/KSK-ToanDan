@@ -20,9 +20,13 @@ Stack: **FastAPI (async) + SQLAlchemy + PostgreSQL** · Frontend vanilla JS + Sh
 
 **Quản trị (admin)** — có thêm:
 - Tạo/sửa/xóa đoàn khám
-- Quản lý người dùng (tạo/sửa/khóa/xóa, đặt vai trò)
+- Quản lý người dùng (tạo/sửa/khóa/xóa, đặt vai trò) và **phân quyền chi tiết cho từng user**
 - Import danh sách dự kiến (Excel)
 - **Xem nhật ký thao tác** của tất cả người dùng (chỉ admin)
+
+**Phân quyền chi tiết (user)** — admin cấp cho từng user các quyền: thêm bản ghi, sửa bản ghi, xóa bản ghi, xuất Excel, xem báo cáo, quản lý DS dự kiến. Backend chặn cứng theo quyền (gọi API không đủ quyền → 403); giao diện tự ẩn nút tương ứng. Admin luôn có toàn quyền.
+
+**Báo cáo thống kê** (cần quyền `view_reports`, admin luôn có) — gộp số lượng **theo ngày / tuần / tháng**, lọc theo khoảng thời gian và theo đoàn, kèm **số lượng theo từng đoàn** và tỷ lệ nam/nữ. Xuất Excel 3 sheet (Tổng hợp / Theo thời gian / Theo đoàn) để làm báo cáo. Mốc thời gian tính theo giờ Việt Nam (UTC+7).
 
 **Đảm bảo đồng thời & chính xác**
 - PostgreSQL transaction → nhiều người ghi cùng lúc không phá dữ liệu của nhau

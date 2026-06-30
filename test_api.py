@@ -24,7 +24,7 @@ with TestClient(app) as c:  # triggers lifespan -> create tables + seed admin
     check("wrong pw rejected", c.post("/api/auth/login", data={"username":"admin","password":"x"}).status_code == 401)
 
     # 3. create a user
-    r = c.post("/api/users", json={"username":"nhanvien1","full_name":"Nhân Viên 1","password":"pass123","role":"user"}, headers=AH)
+    r = c.post("/api/users", json={"username":"nhanvien1","full_name":"Nhân Viên 1","password":"pass123","role":"user","perms":["create_record","edit_record","delete_record","export"]}, headers=AH)
     check("create user", r.status_code == 200)
 
     # 4. user login
