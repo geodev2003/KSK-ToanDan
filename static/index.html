@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nhập liệu Đoàn Khám Sức Khỏe</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
     --bg:#0f1720; --panel:#16212e; --panel2:#1c2a3a; --line:#27384b;
@@ -923,7 +924,7 @@ function renderReport(rep){
   const maxC=Math.max(1,...rep.series.map(x=>x.count));
   const seriesRows=rep.series.length?rep.series.map(b=>`<tr>
     <td>${esc(b.label)}</td>
-    <td style="width:40%"><div class="bar-track"><div class="bar-fill" style="width:${Math.round(b.count/maxC*100)}%"></div></div></td>
+    <td style="width:34%"><div class="bar-track"><div class="bar-fill" style="width:${Math.round(b.count/maxC*100)}%"></div></div></td>
     <td class="mono" style="text-align:right"><b>${b.count}</b></td>
     <td class="mono" style="text-align:right;color:#8bbcff">${b.male}</td>
     <td class="mono" style="text-align:right;color:#bda8ff">${b.female}</td></tr>`).join(""):`<tr><td colspan="5" class="empty">Không có dữ liệu trong khoảng đã chọn.</td></tr>`;
@@ -932,27 +933,73 @@ function renderReport(rep){
     <td class="mono" style="text-align:right"><b>${g.count}</b></td>
     <td class="mono" style="text-align:right;color:#8bbcff">${g.male}</td>
     <td class="mono" style="text-align:right;color:#bda8ff">${g.female}</td></tr>`).join(""):`<tr><td colspan="5" class="empty">—</td></tr>`;
+  const ageRows=rep.by_age.map(a=>`<tr>
+    <td>${esc(a.label)}</td><td class="mono" style="text-align:right"><b>${a.count}</b></td>
+    <td class="mono" style="text-align:right">${rep.total?Math.round(a.count/rep.total*100):0}%</td>
+    <td class="mono" style="text-align:right;color:#8bbcff">${a.male}</td>
+    <td class="mono" style="text-align:right;color:#bda8ff">${a.female}</td></tr>`).join("");
+  const ageMap={}; rep.by_age.forEach(a=>ageMap[a.key]=a.count);
   document.getElementById("reportBody").innerHTML=`
     <div class="stat-row">
       <div class="stat total"><div class="n">${rep.total}</div><div class="l">Tổng đã nhập</div></div>
       <div class="stat male"><div class="n">${rep.male}</div><div class="l">Nam</div></div>
       <div class="stat female"><div class="n">${rep.female}</div><div class="l">Nữ</div></div>
-      <div class="stat"><div class="n" style="font-size:16px">${esc(rep.from)}<br>→ ${esc(rep.to)}</div><div class="l">Khoảng thời gian</div></div>
+      <div class="stat"><div class="n" style="font-size:15px">${esc(rep.from)}<br>→ ${esc(rep.to)}</div><div class="l">Khoảng thời gian</div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="n" style="color:#5fd0a8">${ageMap.child||0}</div><div class="l">Trẻ em (&lt;16)</div></div>
+      <div class="stat"><div class="n" style="color:var(--teal)">${ageMap.adult||0}</div><div class="l">Người lớn (16–59)</div></div>
+      <div class="stat"><div class="n" style="color:var(--amber)">${ageMap.elderly||0}</div><div class="l">Người cao tuổi (≥60)</div></div>
+      <div class="stat"><div class="n" style="color:var(--muted)">${ageMap.unknown||0}</div><div class="l">Không rõ tuổi</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-bottom:18px">
+      <div class="stat" style="height:260px"><div class="l" style="margin-bottom:8px">Số lượng theo ${pLabel}</div><div style="height:210px"><canvas id="chTime"></canvas></div></div>
+      <div class="stat" style="height:260px"><div class="l" style="margin-bottom:8px">Giới tính</div><div style="height:210px"><canvas id="chSex"></canvas></div></div>
+      <div class="stat" style="height:260px"><div class="l" style="margin-bottom:8px">Nhóm tuổi</div><div style="height:210px"><canvas id="chAge"></canvas></div></div>
     </div>
     <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px">
-      <div>
-        <h3 style="font-size:14px;margin:0 0 8px">Số lượng theo ${pLabel}</h3>
-        <div class="tbl-wrap" style="max-height:46vh"><table>
+      <div><h3 style="font-size:14px;margin:0 0 8px">Số lượng theo ${pLabel}</h3>
+        <div class="tbl-wrap" style="max-height:38vh"><table>
           <thead><tr><th>Kỳ</th><th>Biểu đồ</th><th style="text-align:right">SL</th><th style="text-align:right">Nam</th><th style="text-align:right">Nữ</th></tr></thead>
-          <tbody>${seriesRows}</tbody></table></div>
-      </div>
-      <div>
-        <h3 style="font-size:14px;margin:0 0 8px">Số lượng theo đoàn</h3>
-        <div class="tbl-wrap" style="max-height:46vh"><table>
-          <thead><tr><th>Mã đoàn</th><th>Tên đoàn</th><th style="text-align:right">SL</th><th style="text-align:right">Nam</th><th style="text-align:right">Nữ</th></tr></thead>
-          <tbody>${groupRows}</tbody></table></div>
-      </div>
+          <tbody>${seriesRows}</tbody></table></div></div>
+      <div><h3 style="font-size:14px;margin:0 0 8px">Theo nhóm tuổi</h3>
+        <div class="tbl-wrap" style="max-height:38vh"><table>
+          <thead><tr><th>Nhóm tuổi</th><th style="text-align:right">SL</th><th style="text-align:right">%</th><th style="text-align:right">Nam</th><th style="text-align:right">Nữ</th></tr></thead>
+          <tbody>${ageRows}</tbody></table></div>
+        <h3 style="font-size:14px;margin:16px 0 8px">Theo đoàn</h3>
+        <div class="tbl-wrap" style="max-height:30vh"><table>
+          <thead><tr><th>Mã</th><th>Tên đoàn</th><th style="text-align:right">SL</th><th style="text-align:right">Nam</th><th style="text-align:right">Nữ</th></tr></thead>
+          <tbody>${groupRows}</tbody></table></div></div>
     </div>`;
+  makeReportCharts(rep);
+}
+let _charts={};
+function makeReportCharts(rep){
+  if(typeof Chart==="undefined")return; // CDN chưa tải
+  Object.values(_charts).forEach(c=>{try{c.destroy();}catch{}}); _charts={};
+  Chart.defaults.color="#8fa3b8"; Chart.defaults.font.family="Inter,system-ui,sans-serif";
+  const grid="rgba(255,255,255,.06)";
+  // 1) Time series — cột chồng Nam/Nữ
+  const ctxT=document.getElementById("chTime");
+  if(ctxT)_charts.t=new Chart(ctxT,{type:"bar",data:{labels:rep.series.map(s=>s.label),
+    datasets:[
+      {label:"Nam",data:rep.series.map(s=>s.male),backgroundColor:"#4f97ff"},
+      {label:"Nữ",data:rep.series.map(s=>s.female),backgroundColor:"#9b7bff"}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      scales:{x:{stacked:true,grid:{color:grid},ticks:{maxRotation:60,minRotation:0}},y:{stacked:true,grid:{color:grid},beginAtZero:true,ticks:{precision:0}}},
+      plugins:{legend:{position:"bottom"}}}});
+  // 2) Gender doughnut
+  const ctxS=document.getElementById("chSex");
+  if(ctxS){const data=[rep.male,rep.female]; const labels=["Nam","Nữ"]; const colors=["#4f97ff","#9b7bff"];
+    if(rep.other>0){data.push(rep.other);labels.push("Khác/Không rõ");colors.push("#5f7488");}
+    _charts.s=new Chart(ctxS,{type:"doughnut",data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"}}}});}
+  // 3) Age doughnut
+  const ctxA=document.getElementById("chAge");
+  if(ctxA)_charts.a=new Chart(ctxA,{type:"doughnut",
+    data:{labels:rep.by_age.map(a=>a.label),
+      datasets:[{data:rep.by_age.map(a=>a.count),backgroundColor:["#5fd0a8","#3ec6c0","#f0a93b","#5f7488"],borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"}}}});
 }
 function exportReport(){
   const rep=window._rep; if(!rep){ toast("Chưa có dữ liệu báo cáo","err"); return; }
@@ -960,11 +1007,16 @@ function exportReport(){
   const wb=XLSX.utils.book_new();
   const sum=[["BÁO CÁO THỐNG KÊ KHÁM SỨC KHỎE"],[],
     ["Khoảng thời gian",`${rep.from} → ${rep.to}`],["Gộp theo",pLabel],
-    ["Tổng đã nhập",rep.total],["Nam",rep.male],["Nữ",rep.female]];
+    ["Tổng đã nhập",rep.total],["Nam",rep.male],["Nữ",rep.female],["Khác/Không rõ",rep.other],
+    [],["Nhóm tuổi","Số lượng","Nam","Nữ"],
+    ...rep.by_age.map(a=>[a.label,a.count,a.male,a.female])];
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),"TongHop");
   const sh=[["Kỳ","Số lượng","Nam","Nữ"],...rep.series.map(b=>[b.label,b.count,b.male,b.female])];
   const ws1=XLSX.utils.aoa_to_sheet(sh); ws1["!cols"]=[{wch:28},{wch:10},{wch:8},{wch:8}];
   XLSX.utils.book_append_sheet(wb,ws1,"TheoThoiGian");
+  const ah=[["Nhóm tuổi","Số lượng","Tỷ lệ %","Nam","Nữ"],...rep.by_age.map(a=>[a.label,a.count,rep.total?Math.round(a.count/rep.total*100):0,a.male,a.female])];
+  const ws3=XLSX.utils.aoa_to_sheet(ah); ws3["!cols"]=[{wch:22},{wch:10},{wch:9},{wch:8},{wch:8}];
+  XLSX.utils.book_append_sheet(wb,ws3,"TheoTuoi");
   const gh=[["Mã đoàn","Tên đoàn","Số lượng","Nam","Nữ"],...rep.by_group.map(g=>[g.ma_doan,g.ten_doan,g.count,g.male,g.female])];
   const ws2=XLSX.utils.aoa_to_sheet(gh); ws2["!cols"]=[{wch:12},{wch:30},{wch:10},{wch:8},{wch:8}];
   XLSX.utils.book_append_sheet(wb,ws2,"TheoDoan");

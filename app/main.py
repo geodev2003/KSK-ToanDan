@@ -452,6 +452,29 @@ def _bucket(local_dt, period):
     return d.isoformat(), d.strftime("%d/%m/%Y")  # day
 
 
+def _age_from(ngay_sinh: str, today: _date):
+    """Tính tuổi từ chuỗi dd/mm/yyyy. Trả None nếu không hợp lệ."""
+    try:
+        parts = (ngay_sinh or "").strip().split("/")
+        if len(parts) != 3:
+            return None
+        d, mo, y = int(parts[0]), int(parts[1]), int(parts[2])
+        bd = _date(y, mo, d)
+    except (ValueError, TypeError):
+        return None
+    age = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
+    return age if 0 <= age < 150 else None
+
+
+# nhóm tuổi: (key, nhãn, hàm kiểm tra)
+AGE_GROUPS = [
+    ("child",   "Trẻ em (<16)",        lambda a: a is not None and a < 16),
+    ("adult",   "Người lớn (16–59)",   lambda a: a is not None and 16 <= a < 60),
+    ("elderly", "Người cao tuổi (≥60)", lambda a: a is not None and a >= 60),
+    ("unknown", "Không rõ tuổi",        lambda a: a is None),
+]
+
+
 @app.get("/api/reports")
 async def reports(period: str = "day", date_from: str = "", date_to: str = "",
                   group_id: int | None = None,
@@ -469,18 +492,18 @@ async def reports(period: str = "day", date_from: str = "", date_to: str = "",
     except ValueError:
         from_d = to_d - timedelta(days=29)
 
-    # lấy dữ liệu tối thiểu, gộp trong Python (tránh lệ thuộc cú pháp ngày của từng DB)
-    q = select(m.Record.created_at, m.Record.gioi_tinh, m.Record.group_id)
+    q = select(m.Record.created_at, m.Record.gioi_tinh, m.Record.group_id, m.Record.ngay_sinh)
     if group_id:
         q = q.where(m.Record.group_id == group_id)
     rows = (await db.execute(q)).all()
 
     groups = {g.id: g for g in (await db.execute(select(m.Group))).scalars().all()}
 
-    series = {}   # key -> dict(count,male,female,label,sort)
-    by_group = {}  # gid -> dict
+    series = {}
+    by_group = {}
+    age_count = {k: {"key": k, "label": lab, "count": 0, "male": 0, "female": 0} for k, lab, _ in AGE_GROUPS}
     total = male = female = 0
-    for created_at, gt, gid in rows:
+    for created_at, gt, gid, ns in rows:
         loc = _to_local(created_at)
         if loc is None:
             continue
@@ -498,12 +521,19 @@ async def reports(period: str = "day", date_from: str = "", date_to: str = "",
             "ma_doan": g.ma_doan if g else "?", "ten_doan": g.ten_doan if g else "(đã xóa)",
             "count": 0, "male": 0, "female": 0})
         gk["count"] += 1; gk["male"] += is_m; gk["female"] += is_f
+        # nhóm tuổi
+        age = _age_from(ns, today)
+        for k, _lab, test in AGE_GROUPS:
+            if test(age):
+                age_count[k]["count"] += 1; age_count[k]["male"] += is_m; age_count[k]["female"] += is_f
+                break
 
     return {
         "period": period, "from": from_d.isoformat(), "to": to_d.isoformat(),
-        "total": total, "male": male, "female": female,
+        "total": total, "male": male, "female": female, "other": total - male - female,
         "series": sorted(series.values(), key=lambda x: x["key"]),
         "by_group": sorted(by_group.values(), key=lambda x: -x["count"]),
+        "by_age": [age_count[k] for k, _, _ in AGE_GROUPS],
     }
 
 
