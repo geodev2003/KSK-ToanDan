@@ -83,6 +83,21 @@ class RecordOut(RecordBase):
     updated_at: datetime
     created_by: str
     updated_by: str
+    his_status: str = ""
+    his_patient_code: str = ""
+    his_patient_id: str = ""
+    his_ticket_id: str = ""
+    his_message: str = ""
+    his_registered_at: str = ""
+
+
+class HisBulkRegister(BaseModel):
+    record_ids: list[int]
+    force: bool = False
+
+
+class HisRegisterOne(BaseModel):
+    force: bool = False
 
 
 # ---------- Expected ----------

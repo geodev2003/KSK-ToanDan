@@ -59,6 +59,14 @@ class Record(Base):
     created_by: Mapped[str] = mapped_column(String(128), default="")
     updated_by: Mapped[str] = mapped_column(String(128), default="")
 
+    # Kết quả đăng ký gói khám lên HIS
+    his_status: Mapped[str] = mapped_column(String(16), default="")        # '', 'registered', 'error'
+    his_patient_code: Mapped[str] = mapped_column(String(32), default="")
+    his_patient_id: Mapped[str] = mapped_column(String(32), default="")
+    his_ticket_id: Mapped[str] = mapped_column(String(32), default="")
+    his_message: Mapped[str] = mapped_column(String(255), default="")
+    his_registered_at: Mapped[str] = mapped_column(String(32), default="")  # ISO string (VN)
+
     group: Mapped["Group"] = relationship(back_populates="records")
 
     __table_args__ = (
@@ -97,3 +105,9 @@ class AuditLog(Base):
     entity_id: Mapped[str] = mapped_column(String(32), default="")
     detail: Mapped[str] = mapped_column(Text, default="")
     ip: Mapped[str] = mapped_column(String(64), default="")
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")   # lưu JSON

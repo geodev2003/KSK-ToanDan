@@ -205,6 +205,8 @@
         <button class="btn" onclick="openCompare()">So sánh DS dự kiến</button>
         <button class="btn hidden" data-perm="manage_expected" onclick="importExpectedPrompt()">Nhập DS dự kiến</button>
         <button class="btn" id="recCopyBtn" onclick="copyRecSelected()">📋 Copy đã chọn</button>
+        <button class="btn hidden" data-perm="his_register" onclick="hisRegisterSelected()">🏥 Đăng ký HIS (đã chọn)</button>
+        <button class="btn adminOnly hidden" onclick="openHisConfig()">⚙ Cấu hình HIS</button>
         <button class="btn hidden" data-perm="export" onclick="exportExcel()">⤓ Xuất Excel (HIS)</button>
       </div>
       <div class="tbl-wrap">
@@ -212,7 +214,7 @@
           <th style="width:34px;text-align:center"><input type="checkbox" id="rec_all" onclick="toggleRecAll(this)"></th>
           <th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Giới tính</th><th>SĐT</th>
           <th>Nghề nghiệp</th><th>Số nhà</th><th>Khu phố</th><th>Phường</th><th>Tỉnh</th>
-          <th>Nhận HS</th><th>Thời gian</th><th>Người nhập</th><th></th>
+          <th>Nhận HS</th><th>HIS</th><th>Mã BN HIS</th><th>Thời gian</th><th>Người nhập</th><th></th>
         </tr></thead><tbody id="recBody"></tbody></table>
       </div>
     </section>
@@ -321,7 +323,8 @@ async function afterLogin(){
   go("groups");
 }
 const PERMS=[["create_record","Thêm bản ghi"],["edit_record","Sửa bản ghi"],["delete_record","Xóa bản ghi"],
-  ["export","Xuất Excel"],["view_reports","Xem báo cáo"],["manage_expected","Quản lý DS dự kiến"]];
+  ["export","Xuất Excel"],["view_reports","Xem báo cáo"],["manage_expected","Quản lý DS dự kiến"],
+  ["his_register","Đăng ký gói khám lên HIS"]];
 function can(p){ return !!(ME && (ME.role==="admin" || (ME.perms||"").split(",").includes(p))); }
 function applyPerms(){ document.querySelectorAll("[data-perm]").forEach(el=>el.classList.toggle("hidden",!can(el.dataset.perm))); }
 function logout(){ doLogout(false); }
@@ -446,7 +449,7 @@ function renderRecords(){
   if(q)view=view.filter(x=>(x.r.ho_ten+x.r.cccd+x.r.ma_bhyt+x.r.so_dien_thoai+x.r.phuong).toLowerCase().includes(q));
   const sel=state.recSel;
   const body=document.getElementById("recBody");
-  if(!view.length){ body.innerHTML=`<tr><td colspan="17" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`; updateRecCopyBtn(); return; }
+  if(!view.length){ body.innerHTML=`<tr><td colspan="19" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`; updateRecCopyBtn(); return; }
   body.innerHTML=view.map(({r,stt})=>`<tr class="${dupSet.has(r.id)?'dup':''}${sel.has(r.id)?' sel':''}">
     <td style="text-align:center"><input type="checkbox" ${sel.has(r.id)?'checked':''} onclick="toggleRecRow(${r.id},this)"></td>
     <td class="mono">${stt}</td><td class="mono">${esc(r.cccd)}</td><td class="mono">${esc(r.ma_bhyt)}</td>
@@ -455,8 +458,12 @@ function renderRecords(){
     <td>${r.gioi_tinh?`<span class="badge ${r.gioi_tinh==='Nam'?'nam':'nu'}">${esc(r.gioi_tinh)}</span>`:''}</td>
     <td class="mono">${esc(r.so_dien_thoai)}</td>
     <td>${esc(r.nghe_nghiep)}</td><td>${esc(r.so_nha)}</td><td>${esc(r.khu_pho)}</td><td>${esc(r.phuong)}</td><td>${esc(r.tinh)}</td>
-    <td>${esc(r.nhan_ho_so)}</td><td class="mono" style="color:var(--muted)">${fmtTime(r.created_at)}</td><td>${esc(r.created_by)}</td>
+    <td>${esc(r.nhan_ho_so)}</td>
+    <td>${hisCell(r)}</td>
+    <td class="mono" style="color:var(--teal)">${esc(r.his_patient_code||'')}${r.his_patient_id?`<div class="hint" style="font-size:10px">ID: ${esc(r.his_patient_id)}</div>`:''}</td>
+    <td class="mono" style="color:var(--muted)">${fmtTime(r.created_at)}</td><td>${esc(r.created_by)}</td>
     <td><div class="row-act"><button class="icon-btn" title="Copy người này" onclick="copyRecOne(${r.id})">📋</button>
+      ${can('his_register')?`<button class="icon-btn" title="Đăng ký HIS" onclick="hisRegisterOne(${r.id})">🏥</button>`:''}
       ${can('edit_record')?`<button class="icon-btn" title="Sửa" onclick="openEntry(${r.id})">✎</button>`:''}
       ${can('delete_record')?`<button class="icon-btn del" title="Xóa" onclick="delRecord(${r.id})">🗑</button>`:''}</div></td></tr>`).join("");
   const all=document.getElementById("rec_all");
@@ -553,11 +560,12 @@ async function saveEntry(editId){
 function exportExcel(){
   const g=state.group, records=state.records;
   if(!records.length){ toast("Chưa có dữ liệu để xuất","err"); return; }
-  const header=["STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","SĐT","Nghề nghiệp","Số nhà","Khu phố","Phường","Tỉnh","Nhận hồ sơ","Thời gian","Người nhập","Đoàn KSK"];
-  const rows=records.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,r.nhan_ho_so,fmtTime(r.created_at),r.created_by,g.ten_doan]);
+  const header=["STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","SĐT","Nghề nghiệp","Số nhà","Khu phố","Phường","Tỉnh","Nhận hồ sơ","Mã BN HIS","Patient ID HIS","Ticket HIS","Trạng thái HIS","Thời gian","Người nhập","Đoàn KSK"];
+  const hisTxt=r=>r.his_status==='registered'?'Đã ĐK':r.his_status==='error'?'Lỗi':'';
+  const rows=records.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,r.nhan_ho_so,r.his_patient_code||'',r.his_patient_id||'',r.his_ticket_id||'',hisTxt(r),fmtTime(r.created_at),r.created_by,g.ten_doan]);
   const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
-  ws["!cols"]=[6,14,16,22,12,9,13,16,8,12,16,12,10,18,16,20].map(w=>({wch:w}));
-  for(let i=1;i<=records.length;i++)["B","C","G"].forEach(c=>{const cell=ws[c+(i+1)];if(cell){cell.t="s";cell.z="@";}});
+  ws["!cols"]=[6,14,16,22,12,9,13,16,8,12,16,12,10,12,13,12,13,18,16,20].map(w=>({wch:w}));
+  for(let i=1;i<=records.length;i++)["B","C","G","N","O","P"].forEach(c=>{const cell=ws[c+(i+1)];if(cell){cell.t="s";cell.z="@";}});
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"DanhSach");
   XLSX.writeFile(wb,`KSK_${g.ma_doan}_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast("Đã xuất "+records.length+" bản ghi");
@@ -899,6 +907,93 @@ function openChangePw(){
 async function changePw(){
   try{ await api("POST","/api/me/password",{old_password:val("pw_old"),new_password:val("pw_new")});
     closeModal(); toast("Đã đổi mật khẩu"); }catch(e){ toast(e.message,"err"); }
+}
+
+/* ============ HIS ============ */
+function hisCell(r){
+  if(r.his_status==='registered') return `<span class="badge nam" title="Mã BN: ${esc(r.his_patient_code)} · Ticket: ${esc(r.his_ticket_id)}${r.his_registered_at?' · '+esc(r.his_registered_at):''}">✓ ${esc(r.his_patient_code||'đã ĐK')}</span>`;
+  if(r.his_status==='error') return `<span class="badge warn" title="${esc(r.his_message||'Lỗi')}">✕ lỗi</span>`;
+  return '<span class="hint">chưa</span>';
+}
+function _updateRec(rec){ const i=state.records.findIndex(x=>x.id===rec.id); if(i>=0){ state.records[i]=Object.assign(state.records[i],rec); } renderRecords(); }
+async function hisRegisterOne(rid){
+  const r=state.records.find(x=>x.id===rid); if(!r)return;
+  if(r.his_status==='registered'&&!confirm(`"${r.ho_ten}" đã đăng ký HIS (mã ${r.his_patient_code}). Đăng ký lại?`))return;
+  toast("Đang đăng ký HIS...");
+  try{
+    const res=await api("POST",`/api/records/${rid}/his-register`,{force:r.his_status==='registered'});
+    _updateRec(res.record);
+    toast(res.ok?`✓ ${r.ho_ten}: mã BN ${res.record.his_patient_code}`:`✕ ${res.message}`, res.ok?"ok":"err");
+  }catch(e){ toast(e.message,"err"); }
+}
+async function hisRegisterSelected(){
+  const ids=[...state.recSel]; if(!ids.length){ toast("Chưa chọn người nào","err"); return; }
+  if(!confirm(`Đăng ký gói khám lên HIS cho ${ids.length} người đã chọn?\n(Người đã đăng ký sẽ được bỏ qua.)`))return;
+  toast(`Đang đăng ký ${ids.length} người lên HIS...`);
+  try{
+    const res=await api("POST",`/api/groups/${state.group.id}/his-register-bulk`,{record_ids:ids,force:false});
+    await loadRecords(true);
+    const fails=res.results.filter(x=>!x.ok);
+    let msg=`Xong: ${res.success}/${res.total} thành công`;
+    if(res.failed) msg+=` · ${res.failed} lỗi`;
+    toast(msg, res.failed?"err":"ok");
+    if(fails.length) alert("Các trường hợp lỗi:\n"+fails.map(f=>`• ${f.ho_ten||('#'+f.id)}: ${f.message}`).join("\n"));
+  }catch(e){ toast(e.message,"err"); }
+}
+async function openHisConfig(){
+  let cfg; try{ cfg=await api("GET","/api/his/config"); }catch(e){ toast(e.message,"err"); return; }
+  showModal(`<div class="modal-head"><h2>Cấu hình HIS</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <p class="hint" style="margin:0 0 12px">Dán <b>appkey</b> và <b>userkey</b> bắt được từ HIS (công cụ sniffer). Khi token hết hạn thì đăng nhập lại HIS, bắt token mới rồi dán lại đây.</p>
+      <div class="form-grid">
+        <div class="col2"><label class="f">Địa chỉ HIS</label><input class="input" id="h_base" value="${esc(cfg.base_url||'')}"></div>
+        <div class="col2"><label class="f">appkey</label><input class="input mono" id="h_appkey" value="${esc(cfg.appkey||'')}"></div>
+        <div class="col2"><label class="f">userkey</label><input class="input mono" id="h_userkey" value="${esc(cfg.userkey||'')}"></div>
+        <div><label class="f">province_id (tỉnh/TP)</label><input class="input" id="h_prov" value="${esc(cfg.address?.province_id??'')}"></div>
+        <div><label class="f">district_id (quận/huyện)</label><input class="input" id="h_dist" value="${esc(cfg.address?.district_id??'')}"></div>
+        <div><label class="f">Mã gói (service_id)</label><input class="input" id="h_pkg" value="${esc(cfg.package?.service_id??'')}"></div>
+        <div><label class="f">Giá gói</label><input class="input" id="h_price" value="${esc(cfg.package?.normal_price??'')}"></div>
+        <div><label class="f">Tên gói (s_name)</label><input class="input" id="h_sname" value="${esc(cfg.package?.s_name||'')}"></div>
+        <div><label class="f">Mã gói (code)</label><input class="input" id="h_code" value="${esc(cfg.package?.code||'')}"></div>
+        <div><label class="f">mobile_code_order</label><input class="input" id="h_mco" value="${esc(cfg.package?.mobile_code_order||'')}"></div>
+        <div><label class="f">Tiền tố phiếu</label><input class="input" id="h_prefix" value="${esc(cfg.ticket_prefix||'PDV')}"></div>
+      </div>
+      <p class="hint" style="margin:12px 0 0">Dịch vụ trong gói đã nạp: <b id="h_svc">${cfg.services_loaded}</b> dịch vụ. ${cfg.services_loaded?'':'(sẽ tự nạp khi đăng ký lần đầu)'}</p>
+      <div id="h_msg" class="hint" style="margin-top:8px"></div>
+    </div>
+    <div class="modal-foot"><div style="display:flex;gap:8px">
+        <button class="btn" onclick="hisTest()">Kiểm tra kết nối</button>
+        <button class="btn" onclick="hisRefreshSvc()">Nạp lại dịch vụ gói</button></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" onclick="closeModal()">Đóng</button>
+        <button class="btn primary" onclick="hisSaveConfig()">Lưu</button></div></div>`);
+}
+function _hisCfgFromForm(){
+  return {base_url:val("h_base").trim(),appkey:val("h_appkey").trim(),userkey:val("h_userkey").trim(),
+    ticket_prefix:val("h_prefix").trim()||"PDV",
+    address:{province_id:parseInt(val("h_prov"))||0,district_id:parseInt(val("h_dist"))||0},
+    package:{service_id:parseInt(val("h_pkg"))||0,normal_price:parseInt(val("h_price"))||0,
+      s_name:val("h_sname").trim(),code:val("h_code").trim(),mobile_code_order:val("h_mco").trim()}};
+}
+async function hisSaveConfig(){
+  try{ const r=await api("PUT","/api/his/config",_hisCfgFromForm());
+    document.getElementById("h_svc").textContent=r.services_loaded; toast("Đã lưu cấu hình HIS"); }
+  catch(e){ toast(e.message,"err"); }
+}
+async function hisTest(){
+  const el=document.getElementById("h_msg"); el.textContent="Đang kiểm tra...";
+  try{ await api("PUT","/api/his/config",_hisCfgFromForm()); // lưu trước khi test
+    const r=await api("POST","/api/his/test");
+    el.innerHTML=`<span style="color:${r.ok?'var(--teal)':'var(--danger)'}">${r.ok?'✓ ':'✕ '}${esc(r.message)}</span>`;
+  }catch(e){ el.innerHTML=`<span style="color:var(--danger)">${esc(e.message)}</span>`; }
+}
+async function hisRefreshSvc(){
+  const el=document.getElementById("h_msg"); el.textContent="Đang nạp dịch vụ...";
+  try{ await api("PUT","/api/his/config",_hisCfgFromForm());
+    const r=await api("POST","/api/his/refresh-services");
+    if(r.ok){ document.getElementById("h_svc").textContent=r.count; el.innerHTML=`<span style="color:var(--teal)">✓ Đã nạp ${r.count} dịch vụ của gói.</span>`; }
+    else el.innerHTML=`<span style="color:var(--danger)">${esc(r.message)}</span>`;
+  }catch(e){ el.innerHTML=`<span style="color:var(--danger)">${esc(e.message)}</span>`; }
 }
 
 /* ============ BÁO CÁO ============ */

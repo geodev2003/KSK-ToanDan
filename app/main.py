@@ -17,6 +17,7 @@ from .security import (
     get_current_user, require_admin, log_action,
     require_perm, user_can, ALL_PERMS, DEFAULT_USER_PERMS,
 )
+from . import his_client
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
@@ -31,7 +32,12 @@ def _migrate_columns(sync_conn):
             "phuong": "VARCHAR(128)", "tinh": "VARCHAR(128)", "dia_chi": "VARCHAR(255)",
             "so_dien_thoai": "VARCHAR(20)",
         },
-        "records": {"so_dien_thoai": "VARCHAR(20)"},
+        "records": {
+            "so_dien_thoai": "VARCHAR(20)",
+            "his_status": "VARCHAR(16)", "his_patient_code": "VARCHAR(32)",
+            "his_patient_id": "VARCHAR(32)", "his_ticket_id": "VARCHAR(32)",
+            "his_message": "VARCHAR(255)", "his_registered_at": "VARCHAR(32)",
+        },
         "users": {"perms": "VARCHAR(255)"},
     }
     for table, cols in plan.items():
@@ -427,6 +433,122 @@ async def get_logs(limit: int = Query(200, le=1000), offset: int = 0,
     q = q.limit(limit).offset(offset)
     res = await db.execute(q)
     return res.scalars().all()
+
+
+# =================== HIS INTEGRATION ===================
+def _now_vn_iso():
+    return (datetime.now(timezone.utc) + timedelta(hours=7)).replace(microsecond=0).isoformat()
+
+
+@app.get("/api/his/config")
+async def his_get_config(_: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    cfg = await his_client.get_config(db)
+    # không trả list_services (rất dài) — chỉ báo đã nạp hay chưa
+    return {
+        "base_url": cfg["base_url"], "appkey": cfg["appkey"], "userkey": cfg["userkey"],
+        "ethnic_group_id": cfg["ethnic_group_id"], "nationality": cfg["nationality"],
+        "ticket_prefix": cfg["ticket_prefix"], "address": cfg["address"], "package": cfg["package"],
+        "services_loaded": len(cfg.get("list_services") or []),
+    }
+
+
+@app.put("/api/his/config")
+async def his_put_config(request: Request, payload: dict,
+                         admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    allowed = {"base_url", "appkey", "userkey", "ethnic_group_id", "nationality",
+               "ticket_prefix", "address", "package"}
+    patch = {k: v for k, v in payload.items() if k in allowed}
+    # nếu đổi gói khám -> xóa cache dịch vụ để nạp lại
+    if "package" in patch:
+        patch["list_services"] = []
+    cfg = await his_client.save_config(db, patch)
+    await log_action(db, request, admin, "HIS_CONFIG", "his", "", "cập nhật cấu hình HIS")
+    await db.commit()
+    return {"ok": True, "services_loaded": len(cfg.get("list_services") or [])}
+
+
+@app.post("/api/his/test")
+async def his_test(_: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    cfg = await his_client.get_config(db)
+    try:
+        msg = await his_client.test_connection(db, cfg)
+        return {"ok": True, "message": msg}
+    except his_client.HisError as e:
+        return {"ok": False, "message": str(e)}
+
+
+@app.post("/api/his/refresh-services")
+async def his_refresh_services(_: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    cfg = await his_client.get_config(db)
+    cfg["list_services"] = []
+    try:
+        cfg = await his_client.ensure_services(db, cfg)
+        return {"ok": True, "count": len(cfg.get("list_services") or [])}
+    except his_client.HisError as e:
+        return {"ok": False, "message": str(e)}
+
+
+async def _register_record(db, request, actor, rec, cfg, force):
+    """Đăng ký 1 record; cập nhật trạng thái vào DB. Trả về (ok, message, info)."""
+    if rec.his_status == "registered" and rec.his_ticket_id and not force:
+        return True, "Đã đăng ký trước đó (bỏ qua).", {
+            "patient_code": rec.his_patient_code, "ticket_id": rec.his_ticket_id}
+    try:
+        res = await his_client.register_one(db, rec, cfg)
+    except his_client.HisError as e:
+        rec.his_status = "error"; rec.his_message = str(e)[:255]
+        await db.commit()
+        return False, str(e), None
+    except Exception as e:  # noqa
+        rec.his_status = "error"; rec.his_message = f"Lỗi hệ thống: {e}"[:255]
+        await db.commit()
+        return False, str(e), None
+    rec.his_status = "registered"
+    rec.his_patient_code = res["patient_code"]; rec.his_patient_id = res["patient_id"]
+    rec.his_ticket_id = res["ticket_id"]; rec.his_message = ""
+    rec.his_registered_at = _now_vn_iso()
+    await db.commit()
+    await log_action(db, request, actor, "HIS_REGISTER", "record", str(rec.id),
+                     f"patient_code={res['patient_code']} ticket={res['ticket_id']}")
+    await db.commit()
+    return True, "Đăng ký thành công.", res
+
+
+@app.post("/api/records/{rid}/his-register")
+async def his_register_record(request: Request, rid: int, payload: s.HisRegisterOne = None,
+                              user: m.User = Depends(require_perm("his_register")),
+                              db: AsyncSession = Depends(get_db)):
+    rec = (await db.execute(select(m.Record).where(m.Record.id == rid))).scalar_one_or_none()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi")
+    force = bool(payload.force) if payload else False
+    cfg = await his_client.get_config(db)
+    ok, msg, res = await _register_record(db, request, user, rec, cfg, force)
+    await db.refresh(rec)
+    return {"ok": ok, "message": msg, "record": s.RecordOut.model_validate(rec)}
+
+
+@app.post("/api/groups/{gid}/his-register-bulk")
+async def his_register_bulk(request: Request, gid: int, payload: s.HisBulkRegister,
+                            user: m.User = Depends(require_perm("his_register")),
+                            db: AsyncSession = Depends(get_db)):
+    cfg = await his_client.get_config(db)
+    # kiểm tra cấu hình sớm để báo lỗi gọn thay vì lặp
+    if not cfg.get("appkey") or not cfg.get("userkey"):
+        raise HTTPException(status_code=400, detail="Chưa cấu hình appkey/userkey của HIS.")
+    results = []
+    ok_count = 0
+    for rid in payload.record_ids:
+        rec = (await db.execute(select(m.Record).where(m.Record.id == rid, m.Record.group_id == gid))).scalar_one_or_none()
+        if not rec:
+            results.append({"id": rid, "ho_ten": "", "ok": False, "message": "Không tìm thấy"})
+            continue
+        ok, msg, res = await _register_record(db, request, user, rec, cfg, payload.force)
+        ok_count += 1 if ok else 0
+        results.append({"id": rid, "ho_ten": rec.ho_ten, "ok": ok, "message": msg,
+                        "patient_code": rec.his_patient_code, "ticket_id": rec.his_ticket_id})
+    return {"total": len(payload.record_ids), "success": ok_count,
+            "failed": len(payload.record_ids) - ok_count, "results": results}
 
 
 # =================== REPORTS ===================

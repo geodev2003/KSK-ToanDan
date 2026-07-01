@@ -71,7 +71,7 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
 
 
 # ---------- Granular permissions ----------
-ALL_PERMS = ["create_record", "edit_record", "delete_record", "export", "view_reports", "manage_expected"]
+ALL_PERMS = ["create_record", "edit_record", "delete_record", "export", "view_reports", "manage_expected", "his_register"]
 DEFAULT_USER_PERMS = ["create_record", "edit_record", "export"]
 
 
