@@ -132,6 +132,8 @@
   .tag.extra{background:rgba(240,169,59,.16);color:var(--amber)}
   .log-action{font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#0e1620;border:1px solid var(--line)}
   .permDim{opacity:.4;pointer-events:none}
+  .copyable{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+  .copyable:hover{opacity:.7}
   .bar-track{background:#0e1620;border-radius:5px;height:18px;overflow:hidden;min-width:60px}
   .bar-fill{background:linear-gradient(90deg,var(--teal-d),var(--teal));height:100%;border-radius:5px}
 </style>
@@ -206,7 +208,7 @@
         <button class="btn hidden" data-perm="manage_expected" onclick="importExpectedPrompt()">Nhập DS dự kiến</button>
         <button class="btn" id="recCopyBtn" onclick="copyRecSelected()">📋 Copy đã chọn</button>
         <button class="btn hidden" data-perm="his_register" onclick="hisRegisterSelected()">🏥 Đăng ký HIS (đã chọn)</button>
-        <button class="btn adminOnly hidden" onclick="openHisConfig()">⚙ Cấu hình HIS</button>
+        <button class="btn adminOnly hidden" onclick="openHisConfig()">⚙ Cài đặt</button>
         <button class="btn hidden" data-perm="export" onclick="exportExcel()">⤓ Xuất Excel (HIS)</button>
       </div>
       <div class="tbl-wrap">
@@ -214,7 +216,7 @@
           <th style="width:34px;text-align:center"><input type="checkbox" id="rec_all" onclick="toggleRecAll(this)"></th>
           <th>STT</th><th>CCCD</th><th>Mã BHYT</th><th>Họ tên</th><th>Ngày sinh</th><th>Giới tính</th><th>SĐT</th>
           <th>Nghề nghiệp</th><th>Số nhà</th><th>Khu phố</th><th>Phường</th><th>Tỉnh</th>
-          <th>Nhận HS</th><th>HIS</th><th>Mã BN HIS</th><th>Thời gian</th><th>Người nhập</th><th></th>
+          <th>Nhận HS</th><th>ID BN</th><th>Thời gian</th><th>Người nhập</th><th></th>
         </tr></thead><tbody id="recBody"></tbody></table>
       </div>
     </section>
@@ -277,6 +279,7 @@
 const API_BASE = ""; // cùng origin với backend. Nếu tách riêng, đặt vd "http://192.168.56.102:8000"
 let TOKEN = localStorage.getItem("ksk_token") || "";
 let ME = null;
+let APPCFG = { session_cutoff: "13:00" };
 let state = { view:"groups", group:null, records:[], pollTimer:null, lastMeta:null, recSel:new Set() };
 
 /* ============ API ============ */
@@ -320,6 +323,7 @@ async function afterLogin(){
   const rp=document.getElementById("rolePill"); rp.textContent=ME.role; rp.className="role-badge "+ME.role;
   document.querySelectorAll(".adminOnly").forEach(el=>el.classList.toggle("hidden",ME.role!=="admin"));
   applyPerms();
+  try{ APPCFG=await api("GET","/api/app-config"); }catch(e){}
   go("groups");
 }
 const PERMS=[["create_record","Thêm bản ghi"],["edit_record","Sửa bản ghi"],["delete_record","Xóa bản ghi"],
@@ -449,20 +453,19 @@ function renderRecords(){
   if(q)view=view.filter(x=>(x.r.ho_ten+x.r.cccd+x.r.ma_bhyt+x.r.so_dien_thoai+x.r.phuong).toLowerCase().includes(q));
   const sel=state.recSel;
   const body=document.getElementById("recBody");
-  if(!view.length){ body.innerHTML=`<tr><td colspan="19" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`; updateRecCopyBtn(); return; }
+  if(!view.length){ body.innerHTML=`<tr><td colspan="18" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`; updateRecCopyBtn(); return; }
   body.innerHTML=view.map(({r,stt})=>`<tr class="${dupSet.has(r.id)?'dup':''}${sel.has(r.id)?' sel':''}">
     <td style="text-align:center"><input type="checkbox" ${sel.has(r.id)?'checked':''} onclick="toggleRecRow(${r.id},this)"></td>
     <td class="mono">${stt}</td><td class="mono">${esc(r.cccd)}</td><td class="mono">${esc(r.ma_bhyt)}</td>
-    <td><b>${esc(r.ho_ten)}</b>${dupSet.has(r.id)?' <span class="badge warn">trùng</span>':''}</td>
+    <td><b class="copyable" title="Bấm để copy tên" data-copy="${escA(r.ho_ten)}" onclick="copyText(this.dataset.copy,'Đã copy tên')">${esc(r.ho_ten)}</b>${dupSet.has(r.id)?' <span class="badge warn">trùng</span>':''}</td>
     <td class="mono">${esc(r.ngay_sinh)}</td>
     <td>${r.gioi_tinh?`<span class="badge ${r.gioi_tinh==='Nam'?'nam':'nu'}">${esc(r.gioi_tinh)}</span>`:''}</td>
     <td class="mono">${esc(r.so_dien_thoai)}</td>
     <td>${esc(r.nghe_nghiep)}</td><td>${esc(r.so_nha)}</td><td>${esc(r.khu_pho)}</td><td>${esc(r.phuong)}</td><td>${esc(r.tinh)}</td>
-    <td>${esc(r.nhan_ho_so)}</td>
-    <td>${hisCell(r)}</td>
-    <td class="mono" style="color:var(--teal)">${esc(r.his_patient_code||'')}${r.his_patient_id?`<div class="hint" style="font-size:10px">ID: ${esc(r.his_patient_id)}</div>`:''}</td>
+    <td>${sessionOf(r)}</td>
+    <td>${idCell(r)}</td>
     <td class="mono" style="color:var(--muted)">${fmtTime(r.created_at)}</td><td>${esc(r.created_by)}</td>
-    <td><div class="row-act"><button class="icon-btn" title="Copy người này" onclick="copyRecOne(${r.id})">📋</button>
+    <td><div class="row-act"><button class="icon-btn" title="Copy cả dòng" onclick="copyRecOne(${r.id})">📋</button>
       ${can('his_register')?`<button class="icon-btn" title="Đăng ký HIS" onclick="hisRegisterOne(${r.id})">🏥</button>`:''}
       ${can('edit_record')?`<button class="icon-btn" title="Sửa" onclick="openEntry(${r.id})">✎</button>`:''}
       ${can('delete_record')?`<button class="icon-btn del" title="Xóa" onclick="delRecord(${r.id})">🗑</button>`:''}</div></td></tr>`).join("");
@@ -483,18 +486,19 @@ function toggleRecRow(id,el){ const s=state.recSel; if(el.checked)s.add(id);else
 function toggleRecAll(el){ const s=state.recSel; recVisibleIds().forEach(id=>{ el.checked?s.add(id):s.delete(id); }); renderRecords(); }
 function updateRecCopyBtn(){ const b=document.getElementById("recCopyBtn"); if(!b)return;
   const n=state.recSel.size; b.textContent=n?`📋 Copy đã chọn (${n})`:"📋 Copy tất cả (đang lọc)"; }
-function recRowText(r){ return [r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,
-  r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,r.nhan_ho_so].join("\t"); }
+function recRowText(r,stt){ return [r.his_patient_code||"",stt,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,
+  r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,sessionText(r)].join("\t"); }
 async function copyRecOne(id){ const r=state.records.find(x=>x.id===id); if(!r)return;
-  if(await copyToClipboard(recRowText(r)))toast("Đã copy: "+r.ho_ten); else toast("Không copy được","err"); }
+  const stt=state.records.findIndex(x=>x.id===id)+1;
+  if(await copyToClipboard(recRowText(r,stt)))toast("Đã copy: "+r.ho_ten); else toast("Không copy được","err"); }
 async function copyRecSelected(){
   const sel=state.recSel;
   let ids=[...sel];
   if(!ids.length)ids=recVisibleIds(); // không chọn ai → copy tất cả đang lọc
   if(!ids.length){ toast("Không có dòng nào","err"); return; }
   const ordered=state.records.filter(r=>ids.includes(r.id)); // giữ đúng thứ tự danh sách
-  const header=["CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","SĐT","Nghề nghiệp","Số nhà","Khu phố","Phường","Tỉnh","Nhận hồ sơ"].join("\t");
-  const text=[header,...ordered.map(recRowText)].join("\n");
+  const header=["ID BN","STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","SĐT","Nghề nghiệp","Số nhà","Khu phố","Phường","Tỉnh","Nhận hồ sơ"].join("\t");
+  const text=[header,...ordered.map((r,i)=>recRowText(r,i+1))].join("\n");
   if(await copyToClipboard(text))toast(`Đã copy ${ordered.length} người`); else toast("Không copy được","err");
 }
 async function delRecord(id){
@@ -562,7 +566,7 @@ function exportExcel(){
   if(!records.length){ toast("Chưa có dữ liệu để xuất","err"); return; }
   const header=["STT","CCCD","Mã BHYT","Họ tên","Ngày sinh","Giới tính","SĐT","Nghề nghiệp","Số nhà","Khu phố","Phường","Tỉnh","Nhận hồ sơ","Mã BN HIS","Patient ID HIS","Ticket HIS","Trạng thái HIS","Thời gian","Người nhập","Đoàn KSK"];
   const hisTxt=r=>r.his_status==='registered'?'Đã ĐK':r.his_status==='error'?'Lỗi':'';
-  const rows=records.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,r.nhan_ho_so,r.his_patient_code||'',r.his_patient_id||'',r.his_ticket_id||'',hisTxt(r),fmtTime(r.created_at),r.created_by,g.ten_doan]);
+  const rows=records.map((r,i)=>[i+1,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,sessionText(r),r.his_patient_code||'',r.his_patient_id||'',r.his_ticket_id||'',hisTxt(r),fmtTime(r.created_at),r.created_by,g.ten_doan]);
   const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
   ws["!cols"]=[6,14,16,22,12,9,13,16,8,12,16,12,10,12,13,12,13,18,16,20].map(w=>({wch:w}));
   for(let i=1;i<=records.length;i++)["B","C","G","N","O","P"].forEach(c=>{const cell=ws[c+(i+1)];if(cell){cell.t="s";cell.z="@";}});
@@ -910,11 +914,24 @@ async function changePw(){
 }
 
 /* ============ HIS ============ */
-function hisCell(r){
-  if(r.his_status==='registered') return `<span class="badge nam" title="Mã BN: ${esc(r.his_patient_code)} · Ticket: ${esc(r.his_ticket_id)}${r.his_registered_at?' · '+esc(r.his_registered_at):''}">✓ ${esc(r.his_patient_code||'đã ĐK')}</span>`;
-  if(r.his_status==='error') return `<span class="badge warn" title="${esc(r.his_message||'Lỗi')}">✕ lỗi</span>`;
-  return '<span class="hint">chưa</span>';
+function escA(s){ return esc(s==null?'':String(s)).replace(/"/g,'&quot;'); }
+async function copyText(text,msg){
+  if(await copyToClipboard(String(text||''))) toast(msg||('Đã copy: '+text)); else toast("Không copy được","err");
 }
+function idCell(r){
+  if(r.his_status==='registered'&&r.his_patient_code)
+    return `<span class="copyable mono" style="color:var(--teal);font-weight:700" title="Bấm để copy ID: ${escA(r.his_patient_code)}" data-copy="${escA(r.his_patient_code)}" onclick="copyText(this.dataset.copy,'Đã copy ID: '+this.dataset.copy)">${esc(r.his_patient_code)}</span>`;
+  if(r.his_status==='error') return `<span class="badge warn" title="${escA(r.his_message||'Lỗi')}">✕ lỗi</span>`;
+  return '<span class="hint">—</span>';
+}
+function sessionText(r){
+  const cut=(APPCFG.session_cutoff||'13:00'); const p=cut.split(':'); const cutMin=(parseInt(p[0])||0)*60+(parseInt(p[1])||0);
+  const d=r.created_at?new Date(r.created_at):null;
+  if(!d||isNaN(d.getTime())) return r.nhan_ho_so||'';
+  return (d.getHours()*60+d.getMinutes())<cutMin ? 'Sáng' : 'Chiều';
+}
+function sessionOf(r){ const s=sessionText(r);
+  return s==='Sáng'?'<span class="badge nam">Sáng</span>':s==='Chiều'?'<span class="badge warn">Chiều</span>':(s?esc(s):''); }
 function _updateRec(rec){ const i=state.records.findIndex(x=>x.id===rec.id); if(i>=0){ state.records[i]=Object.assign(state.records[i],rec); } renderRecords(); }
 async function hisRegisterOne(rid){
   const r=state.records.find(x=>x.id===rid); if(!r)return;
@@ -941,10 +958,18 @@ async function hisRegisterSelected(){
   }catch(e){ toast(e.message,"err"); }
 }
 async function openHisConfig(){
-  let cfg; try{ cfg=await api("GET","/api/his/config"); }catch(e){ toast(e.message,"err"); return; }
-  showModal(`<div class="modal-head"><h2>Cấu hình HIS</h2><button class="x" onclick="closeModal()">×</button></div>
+  let cfg, app;
+  try{ cfg=await api("GET","/api/his/config"); app=await api("GET","/api/app-config"); }catch(e){ toast(e.message,"err"); return; }
+  showModal(`<div class="modal-head"><h2>Cài đặt</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body">
-      <p class="hint" style="margin:0 0 12px">Dán <b>appkey</b> và <b>userkey</b> bắt được từ HIS (công cụ sniffer). Khi token hết hạn thì đăng nhập lại HIS, bắt token mới rồi dán lại đây.</p>
+      <h3 style="font-size:14px;margin:0 0 10px">Cài đặt chung</h3>
+      <div class="form-grid">
+        <div><label class="f">Giờ phân ca Sáng/Chiều</label><input class="input" type="time" id="a_cutoff" value="${esc(app.session_cutoff||'13:00')}"></div>
+      </div>
+      <p class="hint" style="margin:6px 0 0">Trước giờ này = <b>Sáng</b>, từ giờ này trở đi = <b>Chiều</b> (áp dụng cho cột "Nhận HS", tự tính theo thời gian nhập).</p>
+      <hr style="border:none;border-top:1px solid var(--line);margin:16px 0">
+      <h3 style="font-size:14px;margin:0 0 6px">Cấu hình HIS</h3>
+      <p class="hint" style="margin:0 0 12px">Dán <b>appkey</b> và <b>userkey</b> bắt được từ HIS (công cụ sniffer). Cấu hình này <b>dùng chung cho tất cả các đoàn</b> — chỉ cần đặt một lần. Khi token hết hạn thì đăng nhập lại HIS, bắt token mới rồi dán lại đây.</p>
       <div class="form-grid">
         <div class="col2"><label class="f">Địa chỉ HIS</label><input class="input" id="h_base" value="${esc(cfg.base_url||'')}"></div>
         <div class="col2"><label class="f">appkey</label><input class="input mono" id="h_appkey" value="${esc(cfg.appkey||'')}"></div>
@@ -976,9 +1001,13 @@ function _hisCfgFromForm(){
       s_name:val("h_sname").trim(),code:val("h_code").trim(),mobile_code_order:val("h_mco").trim()}};
 }
 async function hisSaveConfig(){
-  try{ const r=await api("PUT","/api/his/config",_hisCfgFromForm());
-    document.getElementById("h_svc").textContent=r.services_loaded; toast("Đã lưu cấu hình HIS"); }
-  catch(e){ toast(e.message,"err"); }
+  try{
+    const cut=val("a_cutoff"); if(cut){ const a=await api("PUT","/api/app-config",{session_cutoff:cut}); APPCFG=a; }
+    const r=await api("PUT","/api/his/config",_hisCfgFromForm());
+    document.getElementById("h_svc").textContent=r.services_loaded;
+    if(state.group)renderRecords();
+    toast("Đã lưu cài đặt");
+  }catch(e){ toast(e.message,"err"); }
 }
 async function hisTest(){
   const el=document.getElementById("h_msg"); el.textContent="Đang kiểm tra...";

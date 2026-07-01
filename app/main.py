@@ -1,4 +1,6 @@
 import os
+import json
+import re as _re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone, date as _date
 
@@ -433,6 +435,44 @@ async def get_logs(limit: int = Query(200, le=1000), offset: int = 0,
     q = q.limit(limit).offset(offset)
     res = await db.execute(q)
     return res.scalars().all()
+
+
+# =================== APP CONFIG (chung) ===================
+APP_CONFIG_KEY = "app_config"
+DEFAULT_APP_CONFIG = {"session_cutoff": "13:00"}  # trước giờ này = Sáng, từ giờ này = Chiều
+
+
+async def _get_app_config(db: AsyncSession) -> dict:
+    row = (await db.execute(select(m.Setting).where(m.Setting.key == APP_CONFIG_KEY))).scalar_one_or_none()
+    cfg = dict(DEFAULT_APP_CONFIG)
+    if row and row.value:
+        try:
+            cfg.update(json.loads(row.value))
+        except json.JSONDecodeError:
+            pass
+    return cfg
+
+
+@app.get("/api/app-config")
+async def app_config_get(_: m.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await _get_app_config(db)
+
+
+@app.put("/api/app-config")
+async def app_config_put(request: Request, payload: dict,
+                         admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    cfg = await _get_app_config(db)
+    cut = str(payload.get("session_cutoff", "")).strip()
+    if cut and _re.match(r"^\d{1,2}:\d{2}$", cut):
+        cfg["session_cutoff"] = cut
+    row = (await db.execute(select(m.Setting).where(m.Setting.key == APP_CONFIG_KEY))).scalar_one_or_none()
+    if row is None:
+        db.add(m.Setting(key=APP_CONFIG_KEY, value=json.dumps(cfg, ensure_ascii=False)))
+    else:
+        row.value = json.dumps(cfg, ensure_ascii=False)
+    await log_action(db, request, admin, "APP_CONFIG", "app", "", f"session_cutoff={cfg['session_cutoff']}")
+    await db.commit()
+    return {"ok": True, **cfg}
 
 
 # =================== HIS INTEGRATION ===================
