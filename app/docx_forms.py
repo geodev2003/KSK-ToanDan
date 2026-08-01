@@ -175,23 +175,44 @@ def _checkbox_run(para, text, checked=False, size=10.5):
     _set_font(r, size)
 
 
-def _add_boxes_line(doc, label, val_str, max_len=12):
+def _add_boxes_line(doc, label, val_str, max_len=12, label_cm=8.5):
     val_str = str(val_str or "").strip()
     digits = list(val_str[:max_len]) + [""] * max(0, max_len - len(val_str))
 
-    p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(2)
-    p.paragraph_format.space_after = Pt(2)
-    r = p.add_run(label + ": ")
-    _set_font(r, 12, bold=True)
-
-    t = doc.add_table(rows=1, cols=max_len)
+    t = doc.add_table(rows=1, cols=1 + max_len)
     t.alignment = WD_TABLE_ALIGNMENT.LEFT
-    t.style = "Table Grid"
+    t.autofit = False
+
+    row = t.rows[0]
+    cell_lbl = row.cells[0]
+    cell_lbl.width = Cm(label_cm)
+    _set_cell_text(cell_lbl, label + ": ", size=11, bold=True)
+
+    # Xóa viền cho ô chứa nhãn tên mục
+    tcPr0 = cell_lbl._tc.get_or_add_tcPr()
+    tcBorders0 = OxmlElement('w:tcBorders')
+    for side in ['top', 'left', 'bottom', 'right']:
+        b = OxmlElement(f'w:{side}')
+        b.set(qn('w:val'), 'none')
+        tcBorders0.append(b)
+    tcPr0.append(tcBorders0)
+
+    # Thêm viền cho các ô chứa từng chữ số (ô 1 đến max_len)
     for i, d in enumerate(digits):
-        cell = t.rows[0].cells[i]
+        cell = row.cells[1 + i]
         cell.width = Cm(0.42)
         _set_cell_text(cell, d, size=9.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+
+        tcPr = cell._tc.get_or_add_tcPr()
+        tcBorders = OxmlElement('w:tcBorders')
+        for side in ['top', 'left', 'bottom', 'right']:
+            b = OxmlElement(f'w:{side}')
+            b.set(qn('w:val'), 'single')
+            b.set(qn('w:sz'), '4')
+            b.set(qn('w:space'), '0')
+            b.set(qn('w:color'), '000000')
+            tcBorders.append(b)
+        tcPr.append(tcBorders)
 
 
 def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VIỆN HỒNG ĐỨC II") -> "Document":

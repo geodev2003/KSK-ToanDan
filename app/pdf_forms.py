@@ -78,22 +78,26 @@ def _checkbox(label, checked=False):
     return f"{box} {label}"
 
 
-def _digit_boxes_table(val_str, max_len=12):
+def _boxes_row_table(label_text, val_str, max_len=12, label_width=90 * mm):
     val_str = str(val_str or "").strip()
     digits = list(val_str[:max_len]) + [""] * max(0, max_len - len(val_str))
+    st_norm = _styles()["normal"]
     st_box = _styles()["box"]
-    data = [[Paragraph(d, st_box) for d in digits]]
-    col_widths = [4.2 * mm] * max_len
-    t = Table(data, colWidths=col_widths, rowHeights=[5.0 * mm])
+
+    cells = [Paragraph(f"<b>{label_text}:</b>", st_norm)] + [Paragraph(d, st_box) for d in digits]
+    col_widths = [label_width] + [4.2 * mm] * max_len
+
+    t = Table([cells], colWidths=col_widths, rowHeights=[5.2 * mm])
     t.setStyle(TableStyle([
-        ('BOX', (0,0), (-1,-1), 0.5, colors.black),
-        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-        ('TOPPADDING', (0,0), (-1,-1), 0.5),
+        ('ALIGN', (0,0), (0,0), 'LEFT'),
+        ('ALIGN', (1,0), (-1,0), 'CENTER'),
+        ('BOX', (1,0), (-1,0), 0.5, colors.black),
+        ('INNERGRID', (1,0), (-1,0), 0.5, colors.black),
         ('LEFTPADDING', (0,0), (-1,-1), 0),
         ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
     ]))
     return t
 
@@ -149,35 +153,13 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     story.append(_field_row("4. Dân tộc", rec.get("dan_toc")))
     story.append(_field_row("5. Nhóm máu (nếu có)", ""))
 
-    # 6. CCCD dạng ô vuông (12 ô) - cùng 1 dòng
-    cccd_val = rec.get("cccd") or ""
-    cccd_boxes = _digit_boxes_table(cccd_val, 12)
-    cccd_row = Table([[Paragraph("<b>6. Số CCCD/Mã định danh/Hộ chiếu:</b>", styles["normal"]), cccd_boxes]], colWidths=[95 * mm, 85 * mm])
-    cccd_row.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('ALIGN', (0,0), (0,0), 'LEFT'),
-        ('ALIGN', (1,0), (1,0), 'LEFT'),
-        ('LEFTPADDING', (0,0), (-1,-1), 0),
-        ('RIGHTPADDING', (0,0), (-1,-1), 0),
-        ('TOPPADDING', (0,0), (-1,-1), 1),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 1),
-    ]))
-    story.append(cccd_row)
+    # 6. CCCD dạng ô vuông (12 ô) - trên cùng 1 dòng
+    story.append(_boxes_row_table("6. Số CCCD/Mã số định danh/Hộ chiếu", rec.get("cccd"), 12, 90 * mm))
+    story.append(Spacer(1, 1.5 * mm))
 
-    # 7. BHYT dạng ô vuông (15 ô) - cùng 1 dòng
-    bhyt_val = rec.get("ma_bhyt") or ""
-    bhyt_boxes = _digit_boxes_table(bhyt_val, 15)
-    bhyt_row = Table([[Paragraph("<b>7. Số thẻ BHYT:</b>", styles["normal"]), bhyt_boxes]], colWidths=[95 * mm, 85 * mm])
-    bhyt_row.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('ALIGN', (0,0), (0,0), 'LEFT'),
-        ('ALIGN', (1,0), (1,0), 'LEFT'),
-        ('LEFTPADDING', (0,0), (-1,-1), 0),
-        ('RIGHTPADDING', (0,0), (-1,-1), 0),
-        ('TOPPADDING', (0,0), (-1,-1), 1),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 1),
-    ]))
-    story.append(bhyt_row)
+    # 7. BHYT dạng ô vuông (15 ô) - trên cùng 1 dòng
+    story.append(_boxes_row_table("7. Số thẻ BHYT", rec.get("ma_bhyt"), 15, 90 * mm))
+    story.append(Spacer(1, 1.5 * mm))
 
     dia_chi = ", ".join(x for x in [rec.get("so_nha"), rec.get("khu_pho"), rec.get("phuong"), rec.get("tinh")] if x)
     story.append(_field_row("8. Nơi ở hiện tại", dia_chi))
