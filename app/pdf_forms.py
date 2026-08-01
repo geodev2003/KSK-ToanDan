@@ -112,9 +112,9 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
                             leftMargin=15 * mm, rightMargin=15 * mm)
     story = []
 
-    # 1. Dòng đầu tiên trên cùng
-    story.append(Paragraph("Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI", styles["small"]))
-    story.append(Paragraph("-----", styles["small"]))
+    # 1. Dòng đầu tiên trên cùng (Tăng font size, in đậm, căn giữa như Mau02.pdf)
+    story.append(Paragraph("<b>Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI</b>", styles["title"]))
+    story.append(Paragraph("-----", styles["center"]))
     story.append(Spacer(1, 2 * mm))
 
     # 2. Bảng Header 2 cột (Trái: Logo + Tên BV + Số / Phải: Quốc hiệu)

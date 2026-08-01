@@ -604,6 +604,27 @@ async function bulkDeleteSelected(){
   }catch(e){ toast(e.message, "err"); }
 }
 
+function toggleMau02Expanded(){
+  const container = document.getElementById("mau02ModalContainer");
+  const iframeContainer = document.getElementById("mau02IframeContainer");
+  const btn = document.getElementById("mau02ExpandBtn");
+  if(!container) return;
+
+  if(container.dataset.expanded === "1"){
+    container.dataset.expanded = "0";
+    container.style.maxWidth = "980px";
+    container.style.width = "92vw";
+    if(iframeContainer) iframeContainer.style.height = "620px";
+    if(btn) btn.innerHTML = "⛶ Mở rộng";
+  }else{
+    container.dataset.expanded = "1";
+    container.style.maxWidth = "98vw";
+    container.style.width = "98vw";
+    if(iframeContainer) iframeContainer.style.height = "82vh";
+    if(btn) btn.innerHTML = "🗗 Thu nhỏ";
+  }
+}
+
 /* ============ MAU 02 PREVIEW & EXPORT ============ */
 let currentMau02Ids = [];
 
@@ -653,10 +674,11 @@ async function showMau02Modal(){
   }
 
   showModal(`
-    <div style="width:92vw;max-width:980px;display:flex;flex-direction:column;gap:12px">
+    <div id="mau02ModalContainer" data-expanded="0" style="width:92vw;max-width:980px;display:flex;flex-direction:column;gap:12px;transition:all 0.2s ease">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <h3 style="margin:0;font-size:16px">${esc(title)}</h3>
         <div style="display:flex;gap:8px;align-items:center">
+          <button id="mau02ExpandBtn" class="btn sm" onclick="toggleMau02Expanded()" title="Mở rộng / Thu nhỏ khung xem trước">⛶ Mở rộng</button>
           <button class="btn sm primary" onclick="downloadMau02Docx()">📥 Tải bản Word (.docx)</button>
           <button class="btn sm" onclick="downloadMau02Pdf()">📥 Tải bản PDF (.pdf)</button>
           <button class="btn sm" onclick="printMau02Pdf()">🖨 In ngay</button>

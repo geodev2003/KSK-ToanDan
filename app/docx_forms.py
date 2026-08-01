@@ -233,9 +233,9 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
 
     gioi = (rec.get("gioi_tinh") or "").strip()
 
-    # 1. Dòng Mẫu 2 trên cùng
-    _p(d, "Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI", size=9.5, space_after=1)
-    _p(d, "-----", size=9.5, space_after=4)
+    # 1. Dòng Mẫu 2 trên cùng (Tăng font size, in đậm, căn giữa như Mau02.pdf)
+    _p(d, "Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI", size=11, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=1)
+    _p(d, "-----", size=10, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=4)
 
     # 2. Header Table 2 cột (Trái: Logo + Tên BV + Số / Phải: Quốc hiệu)
     logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "images", "logo_hongduc2.png")
