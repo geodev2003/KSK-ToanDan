@@ -626,28 +626,30 @@ async function openMau02Selected(){
 
 async function showMau02Modal(){
   const title = currentMau02Ids.length === 1 ? "Xem trước Mẫu 02 (1 khách hàng)" : `Xem trước Mẫu 02 (${currentMau02Ids.length} khách hàng được chọn)`;
+  toast("Đang nạp xem trước Mẫu 02...");
 
   let pdfUrl = "";
-  if(currentMau02Ids.length === 1){
-    pdfUrl = API_BASE + `/api/records/${currentMau02Ids[0]}/export/pdf`;
-  }else{
-    toast("Đang nạp xem trước Mẫu 02...");
-    try{
-      const headers = {};
-      if(TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+  try{
+    const headers = {};
+    if(TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+
+    let res;
+    if(currentMau02Ids.length === 1){
+      res = await fetch(API_BASE + `/api/records/${currentMau02Ids[0]}/export/pdf`, { headers });
+    }else{
       headers["Content-Type"] = "application/json";
-      const res = await fetch(API_BASE + "/api/records/export/pdf", {
+      res = await fetch(API_BASE + "/api/records/export/pdf", {
         method: "POST",
         headers,
         body: JSON.stringify({ record_ids: currentMau02Ids })
       });
-      if(!res.ok) throw new Error("Lỗi nạp PDF: " + res.status);
-      const blob = await res.blob();
-      pdfUrl = URL.createObjectURL(blob);
-    }catch(e){
-      toast("Không nạp được bản xem trước PDF: " + e.message, "err");
-      pdfUrl = "";
     }
+
+    if(!res.ok) throw new Error("Lỗi nạp PDF: " + res.status);
+    const blob = await res.blob();
+    pdfUrl = URL.createObjectURL(blob);
+  }catch(e){
+    toast("Không nạp được bản xem trước PDF: " + e.message, "err");
   }
 
   showModal(`
@@ -662,7 +664,7 @@ async function showMau02Modal(){
         </div>
       </div>
       <div style="flex:1;height:620px;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
-        ${pdfUrl ? `<iframe id="mau02Iframe" src="${pdfUrl}" style="width:100%;height:100%;border:none"></iframe>` : '<div style="padding:40px;text-align:center">Đang nạp PDF...</div>'}
+        ${pdfUrl ? `<iframe id="mau02Iframe" src="${pdfUrl}" style="width:100%;height:100%;border:none"></iframe>` : '<div style="padding:40px;text-align:center;color:var(--muted)">Không nạp được xem trước PDF</div>'}
       </div>
     </div>
   `, "wide");
@@ -674,47 +676,56 @@ async function downloadMau02Docx(){
   const headers = {};
   if(TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
 
-  if(currentMau02Ids.length === 1){
-    window.open(API_BASE + `/api/records/${currentMau02Ids[0]}/export/docx`, "_blank");
-  }else{
-    headers["Content-Type"] = "application/json";
-    const res = await fetch(API_BASE + "/api/records/export/docx", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ record_ids: currentMau02Ids })
-    });
-    if(!res.ok){ toast("Lỗi tải file Word", "err"); return; }
+  try{
+    let res, fname = "Mau02_DanhSach.docx";
+    if(currentMau02Ids.length === 1){
+      res = await fetch(API_BASE + `/api/records/${currentMau02Ids[0]}/export/docx`, { headers });
+      fname = "Mau02_KhachHang.docx";
+    }else{
+      headers["Content-Type"] = "application/json";
+      res = await fetch(API_BASE + "/api/records/export/docx", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ record_ids: currentMau02Ids })
+      });
+    }
+    if(!res.ok) throw new Error("Lỗi " + res.status);
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "Mau02_DanhSach.docx";
+    a.download = fname;
     a.click();
     toast("Đã xuất file Word Mẫu 02", "ok");
-  }
+  }catch(e){ toast("Lỗi tải file Word: " + e.message, "err"); }
 }
 
 async function downloadMau02Pdf(){
   if(!currentMau02Ids.length) return;
   toast("Đang tạo file PDF Mẫu 02...");
-  if(currentMau02Ids.length === 1){
-    window.open(API_BASE + `/api/records/${currentMau02Ids[0]}/export/pdf`, "_blank");
-  }else{
-    const headers = {};
-    if(TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
-    headers["Content-Type"] = "application/json";
-    const res = await fetch(API_BASE + "/api/records/export/pdf", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ record_ids: currentMau02Ids })
-    });
-    if(!res.ok){ toast("Lỗi tải file PDF", "err"); return; }
+  const headers = {};
+  if(TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+
+  try{
+    let res, fname = "Mau02_DanhSach.pdf";
+    if(currentMau02Ids.length === 1){
+      res = await fetch(API_BASE + `/api/records/${currentMau02Ids[0]}/export/pdf`, { headers });
+      fname = "Mau02_KhachHang.pdf";
+    }else{
+      headers["Content-Type"] = "application/json";
+      res = await fetch(API_BASE + "/api/records/export/pdf", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ record_ids: currentMau02Ids })
+      });
+    }
+    if(!res.ok) throw new Error("Lỗi " + res.status);
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "Mau02_DanhSach.pdf";
+    a.download = fname;
     a.click();
     toast("Đã xuất file PDF Mẫu 02", "ok");
-  }
+  }catch(e){ toast("Lỗi tải file PDF: " + e.message, "err"); }
 }
 
 function printMau02Pdf(){
