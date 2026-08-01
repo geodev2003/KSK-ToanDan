@@ -176,29 +176,30 @@ def _checkbox_run(para, text, checked=False, size=10.5):
 
 
 def _add_boxes_line(doc, label, val_str, max_len=12):
-    p = doc.add_paragraph()
-    p.paragraph_format.space_after = Pt(2)
-    r = p.add_run(label + ": ")
-    _set_font(r, 12, bold=False)
-
     val_str = str(val_str or "").strip()
     digits = list(val_str[:max_len]) + [""] * max(0, max_len - len(val_str))
+
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(2)
+    p.paragraph_format.space_after = Pt(2)
+    r = p.add_run(label + ": ")
+    _set_font(r, 12, bold=True)
 
     t = doc.add_table(rows=1, cols=max_len)
     t.alignment = WD_TABLE_ALIGNMENT.LEFT
     t.style = "Table Grid"
     for i, d in enumerate(digits):
         cell = t.rows[0].cells[i]
-        cell.width = Cm(0.55)
-        _set_cell_text(cell, d, size=10, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+        cell.width = Cm(0.42)
+        _set_cell_text(cell, d, size=9.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
 
 
 def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VIỆN HỒNG ĐỨC II") -> "Document":
     d = Document()
     section = d.sections[0]
-    section.top_margin = Cm(1.5)
-    section.bottom_margin = Cm(1.5)
-    section.left_margin = Cm(2.0)
+    section.top_margin = Cm(1.2)
+    section.bottom_margin = Cm(1.2)
+    section.left_margin = Cm(1.5)
     section.right_margin = Cm(1.5)
 
     # style mặc định
@@ -208,22 +209,43 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
 
     gioi = (rec.get("gioi_tinh") or "").strip()
 
-    # ---------- Tiêu đề & Logo ----------
+    # ---------- Tiêu đề & Logo (Header Table 2 cột) ----------
     logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "images", "logo_hongduc2.png")
-    if os.path.exists(logo_path):
-        p_logo = d.add_paragraph()
-        p_logo.paragraph_format.space_after = Pt(2)
-        r_logo = p_logo.add_run()
-        r_logo.add_picture(logo_path, width=Cm(5.2))
-    else:
-        _p(d, hospital_name.upper(), size=12, bold=True)
+    tbl_hdr = d.add_table(rows=1, cols=2)
+    tbl_hdr.alignment = WD_TABLE_ALIGNMENT.CENTER
+    cell_l, cell_r = tbl_hdr.rows[0].cells
+    cell_l.width = Cm(6.5)
+    cell_r.width = Cm(11.5)
 
-    _p(d, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
-    _p(d, "Độc lập - Tự do - Hạnh phúc", size=12, italic=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=10)
-    _p(d, "Số: ……………/GKSK", size=11)
-    _p(d, "MẪU 02 - GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
-    _p(d, "DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN DƯỚI 18 TUỔI", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
-    _p(d, "(Ban hành kèm theo Thông tư số 25/2026/TT-BYT ngày 30/6/2026 của Bộ Y tế)", size=10.5, italic=True,
+    p_logo = cell_l.paragraphs[0]
+    p_logo.paragraph_format.space_after = Pt(1)
+    if os.path.exists(logo_path):
+        r_logo = p_logo.add_run()
+        r_logo.add_picture(logo_path, width=Cm(4.8))
+
+    p_hname = cell_l.add_paragraph()
+    p_hname.paragraph_format.space_after = Pt(2)
+    _set_font(p_hname.add_run(hospital_name.upper()), 10, bold=True)
+
+    p_r1 = cell_r.paragraphs[0]
+    p_r1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_r1.paragraph_format.space_after = Pt(2)
+    _set_font(p_r1.add_run("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"), 12, bold=True)
+
+    p_r2 = cell_r.add_paragraph()
+    p_r2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_r2.paragraph_format.space_after = Pt(2)
+    _set_font(p_r2.add_run("Độc lập - Tự do - Hạnh phúc"), 11, bold=True)
+
+    p_r3 = cell_r.add_paragraph()
+    p_r3.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_r3.paragraph_format.space_after = Pt(4)
+    _set_font(p_r3.add_run("---------------------"), 10)
+
+    _p(d, "Số: ……………/GKSK", size=11, space_before=4, space_after=4)
+    _p(d, "MẪU 02 - GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
+    _p(d, "DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN DƯỚI 18 TUỔI", size=12, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
+    _p(d, "(Ban hành kèm theo Thông tư số 25/2026/TT-BYT ngày 30/6/2026 của Bộ Y tế)", size=10, italic=True,
        align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8)
 
     # ---------- THÔNG TIN HÀNH CHÍNH ----------
