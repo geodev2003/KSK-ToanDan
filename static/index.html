@@ -225,6 +225,21 @@
           <th>Nhận HS</th><th>Thời gian</th><th>Người nhập</th>
         </tr></thead><tbody id="recBody"></tbody></table>
       </div>
+      <div id="recPagination" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:10px;padding:8px 12px;background:var(--panel-bg);border:1px solid var(--border);border-radius:8px;font-size:13px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span id="recPgInfo" style="color:var(--muted)">Đang nạp...</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--muted)">Hiển thị:</span>
+            <select class="select" id="recPgSize" style="width:auto;padding:2px 6px;font-size:12px" onchange="changeRecPageSize(this.value)">
+              <option value="25" selected>25 dòng/trang</option>
+              <option value="50">50 dòng/trang</option>
+              <option value="100">100 dòng/trang</option>
+              <option value="0">Tất cả</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px" id="recPgBtns"></div>
+      </div>
     </section>
 
     <!-- USERS (admin) -->
@@ -532,7 +547,60 @@ async function loadRecords(silent){
     if(silent){ const d=document.getElementById("liveDot"); d.style.color="var(--green)"; setTimeout(()=>d.style.color="",600); }
   }catch(e){ toast(e.message,"err"); }
 }
+/* ============ PHÂN TRANG DANH SÁCH KHÁCH HÀNG ============ */
+state.recPage = 1;
+state.recPageSize = 25;
+
+function changeRecPage(pg){
+  state.recPage = pg;
+  renderRecords();
+}
+
+function changeRecPageSize(sz){
+  state.recPageSize = parseInt(sz) || 25;
+  state.recPage = 1;
+  renderRecords();
+}
+
+function renderRecPagination(total, startIdx, page, pageSize){
+  const info = document.getElementById("recPgInfo");
+  const btns = document.getElementById("recPgBtns");
+  if(!info || !btns) return;
+
+  if(total === 0){
+    info.textContent = "Không có bản ghi nào";
+    btns.innerHTML = "";
+    return;
+  }
+
+  const endIdx = pageSize > 0 ? Math.min(startIdx + pageSize, total) : total;
+  info.textContent = pageSize > 0 ? `Hiển thị ${startIdx + 1} - ${endIdx} / tổng ${total} khách hàng` : `Hiển thị tất cả ${total} khách hàng`;
+
+  if(pageSize === 0 || total <= pageSize){
+    btns.innerHTML = "";
+    return;
+  }
+
+  const totalPages = Math.ceil(total / pageSize);
+  let html = `<button class="btn sm" ${page <= 1 ? "disabled" : ""} onclick="changeRecPage(1)" title="Trang đầu">⏮</button>`;
+  html += `<button class="btn sm" ${page <= 1 ? "disabled" : ""} onclick="changeRecPage(${page - 1})" title="Trang trước">◄</button>`;
+
+  let startPg = Math.max(1, page - 2);
+  let endPg = Math.min(totalPages, startPg + 4);
+  if(endPg - startPg < 4) startPg = Math.max(1, endPg - 4);
+
+  for(let p = startPg; p <= endPg; p++){
+    html += `<button class="btn sm ${p === page ? "primary" : ""}" onclick="changeRecPage(${p})">${p}</button>`;
+  }
+
+  html += `<button class="btn sm" ${page >= totalPages ? "disabled" : ""} onclick="changeRecPage(${page + 1})" title="Trang sau">►</button>`;
+  html += `<button class="btn sm" ${page >= totalPages ? "disabled" : ""} onclick="changeRecPage(${totalPages})" title="Trang cuối">⏭</button>`;
+
+  btns.innerHTML = html;
+}
+
 function dupKey(r){ return (r.ho_ten||"").trim().toLowerCase()+"|"+(r.ngay_sinh||"").trim(); }
+
 function renderRecords(){
   const records=state.records;
   const map={}; records.forEach(r=>{const k=dupKey(r);map[k]=(map[k]||0)+1;});
@@ -544,10 +612,26 @@ function renderRecords(){
   const q=(document.getElementById("recSearch").value||"").toLowerCase();
   let view=records.map((r,i)=>({r,stt:i+1}));
   if(q)view=view.filter(x=>(x.r.ho_ten+x.r.cccd+x.r.ma_bhyt+x.r.so_dien_thoai+x.r.phuong).toLowerCase().includes(q));
+
+  const total = view.length;
+  const pageSize = state.recPageSize || 25;
+  const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+  if(state.recPage > totalPages) state.recPage = totalPages;
+  if(state.recPage < 1) state.recPage = 1;
+
+  const startIdx = pageSize > 0 ? (state.recPage - 1) * pageSize : 0;
+  const pagedView = pageSize > 0 ? view.slice(startIdx, startIdx + pageSize) : view;
+
   const sel=state.recSel;
   const body=document.getElementById("recBody");
-  if(!view.length){ body.innerHTML=`<tr><td colspan="18" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`; updateRecCopyBtn(); return; }
-  body.innerHTML=view.map(({r,stt})=>`<tr class="${dupSet.has(r.id)?'dup':''}${sel.has(r.id)?' sel':''}">
+  if(!total){
+    body.innerHTML=`<tr><td colspan="18" class="empty"><div class="big">⊕</div>${records.length?"Không tìm thấy.":'Chưa có dữ liệu. Nhấn <b>Nhập nhanh</b> hoặc <span class="kbd">F2</span>.'}</td></tr>`;
+    renderRecPagination(0, 0, 1, 25);
+    updateRecCopyBtn();
+    return;
+  }
+
+  body.innerHTML=pagedView.map(({r,stt})=>`<tr class="${dupSet.has(r.id)?'dup':''}${sel.has(r.id)?' sel':''}">
     <td style="text-align:center"><input type="checkbox" ${sel.has(r.id)?'checked':''} onclick="toggleRecRow(${r.id},this)"></td>
     <td><div class="row-act"><button class="icon-btn" title="Copy cả dòng" onclick="copyRecOne(${r.id})">📋</button>
       <button class="icon-btn" title="Xuất Mẫu 02 (In/Word/PDF)" onclick="openMau02One(${r.id})">📄</button>
@@ -567,7 +651,8 @@ function renderRecords(){
     <td>${sessionOf(r)}</td>
     <td class="mono" style="color:var(--muted)">${fmtTime(r.created_at)}</td><td>${esc(r.created_by)}</td></tr>`).join("");
   const all=document.getElementById("rec_all");
-  if(all){ const vis=view.map(x=>x.r.id); all.checked=vis.length>0&&vis.every(id=>sel.has(id)); }
+  if(all){ const vis=pagedView.map(x=>x.r.id); all.checked=vis.length>0&&vis.every(id=>sel.has(id)); }
+  renderRecPagination(total, startIdx, state.recPage, pageSize);
   updateRecCopyBtn();
 }
 function recVisibleIds(){

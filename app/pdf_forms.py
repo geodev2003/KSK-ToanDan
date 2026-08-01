@@ -112,8 +112,9 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
                             leftMargin=15 * mm, rightMargin=15 * mm)
     story = []
 
-    # 1. Dòng đầu tiên trên cùng (Tăng font size, in đậm, căn giữa như Mau02.pdf)
-    story.append(Paragraph("<b>Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI</b>", styles["title"]))
+    # 1. Dòng đầu tiên trên cùng (Tăng font size 13.5pt, in đậm, căn giữa như Mau02.pdf)
+    m2_style = ParagraphStyle("m2_top", fontName=FONT_BOLD, fontSize=13.5, leading=17, alignment=TA_CENTER)
+    story.append(Paragraph("Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI", m2_style))
     story.append(Paragraph("-----", styles["center"]))
     story.append(Spacer(1, 2 * mm))
 
