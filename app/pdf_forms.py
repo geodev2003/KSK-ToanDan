@@ -142,7 +142,7 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     story.append(Paragraph("(Ban hành kèm theo Thông tư số 25/2026/TT-BYT ngày 30/6/2026 của Bộ Y tế)", styles["sub"]))
     story.append(Spacer(1, 3 * mm))
 
-    # ---------- I. Thông tin hành chính ----------
+    # ---------- I. Thông tin hành chính (Đầy đủ 15 mục theo Mẫu 02) ----------
     story.append(Paragraph("THÔNG TIN HÀNH CHÍNH", styles["h2"]))
     story.append(_field_row("1. Họ và tên (viết chữ in hoa)", (rec.get("ho_ten") or "").upper()))
     gioi = rec.get("gioi_tinh") or ""
@@ -153,19 +153,35 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     story.append(_field_row("4. Dân tộc", rec.get("dan_toc")))
     story.append(_field_row("5. Nhóm máu (nếu có)", ""))
 
-    # 6. CCCD dạng ô vuông (12 ô) - trên cùng 1 dòng
+    # 6. CCCD dạng ô vuông (12 ô) - cùng 1 dòng
     story.append(_boxes_row_table("6. Số CCCD/Mã số định danh/Hộ chiếu", rec.get("cccd"), 12, 90 * mm))
-    story.append(Spacer(1, 1.5 * mm))
+    story.append(Spacer(1, 1.2 * mm))
 
-    # 7. BHYT dạng ô vuông (15 ô) - trên cùng 1 dòng
+    # 7. BHYT dạng ô vuông (15 ô) - cùng 1 dòng
     story.append(_boxes_row_table("7. Số thẻ BHYT", rec.get("ma_bhyt"), 15, 90 * mm))
-    story.append(Spacer(1, 1.5 * mm))
+    story.append(Spacer(1, 1.2 * mm))
 
     dia_chi = ", ".join(x for x in [rec.get("so_nha"), rec.get("khu_pho"), rec.get("phuong"), rec.get("tinh")] if x)
     story.append(_field_row("8. Nơi ở hiện tại", dia_chi))
-    story.append(_field_row("9. Nghề nghiệp", rec.get("nghe_nghiep")))
-    story.append(_field_row("10. Điện thoại di động", rec.get("so_dien_thoai")))
-    story.append(_field_row("11. Lý do khám sức khỏe", ""))
+    story.append(_field_row("Xã/Phường", rec.get("phuong")))
+
+    # 9, 10, 11. Thông tin trường học
+    ten_truong = group.get("ten_doan") or ""
+    story.append(Paragraph(
+        f"9. Trẻ có đi học: &nbsp;&nbsp; {_checkbox('Có', True)} &nbsp;&nbsp;&nbsp;&nbsp; {_checkbox('Không (chuyển qua câu 12)', False)}",
+        styles["normal"]))
+    story.append(_field_row("10. Tên Trường (nếu có)", ten_truong))
+    story.append(_field_row("11. Địa chỉ trường", group.get("dia_diem") or ""))
+    story.append(_field_row("Xã/Phường", ""))
+
+    # 12, 13, 14, 15. Thông tin người giám hộ & liên hệ
+    story.append(_field_row("12. Họ và tên mẹ hoặc người giám hộ (đối với trẻ ≤16 tuổi)", ""))
+    story.append(_field_row("CCCD của mẹ hoặc người giám hộ", ""))
+    story.append(Paragraph(
+        f"13. Mối quan hệ với trẻ: {_checkbox('Cha')} &nbsp; {_checkbox('Mẹ')} &nbsp; {_checkbox('Ông/bà')} &nbsp; {_checkbox('Anh/chị')} &nbsp; {_checkbox('Họ hàng')} &nbsp; {_checkbox('Khác')}",
+        styles["normal"]))
+    story.append(_field_row("14. Điện thoại di động", rec.get("so_dien_thoai")))
+    story.append(_field_row("15. Lý do khám sức khỏe", "Khám sức khỏe học sinh / định kỳ"))
     story.append(Spacer(1, 2 * mm))
 
     story.append(Paragraph("THÔNG TIN ĐỐI TƯỢNG - CHI TRẢ", styles["h3"]))

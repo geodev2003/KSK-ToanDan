@@ -269,20 +269,32 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     _p(d, "(Ban hành kèm theo Thông tư số 25/2026/TT-BYT ngày 30/6/2026 của Bộ Y tế)", size=10, italic=True,
        align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8)
 
-    # ---------- THÔNG TIN HÀNH CHÍNH ----------
+    # ---------- THÔNG TIN HÀNH CHÍNH (Đầy đủ 15 mục theo Mẫu 02) ----------
     _heading(d, "THÔNG TIN HÀNH CHÍNH")
     _field_line(d, "1. Họ và tên (viết chữ in hoa)", (rec.get("ho_ten") or "").upper())
     _checkbox_line(d, [("Nam", gioi == "Nam"), ("Nữ", gioi == "Nữ")])
     _field_line(d, "3. Ngày tháng năm sinh", rec.get("ngay_sinh"))
     _field_line(d, "4. Dân tộc", rec.get("dan_toc"))
     _field_line(d, "5. Nhóm máu (nếu có)", "")
-    _add_boxes_line(d, "6. Số CCCD / Mã số định danh", rec.get("cccd"), 12)
-    _add_boxes_line(d, "7. Số thẻ BHYT", rec.get("ma_bhyt"), 15)
+    _add_boxes_line(d, "6. Số CCCD/Mã số định danh/Hộ chiếu", rec.get("cccd"), 12, label_cm=8.5)
+    _add_boxes_line(d, "7. Số thẻ BHYT", rec.get("ma_bhyt"), 15, label_cm=8.5)
     dia_chi = ", ".join(x for x in [rec.get("so_nha"), rec.get("khu_pho"), rec.get("phuong"), rec.get("tinh")] if x)
     _field_line(d, "8. Nơi ở hiện tại", dia_chi)
-    _field_line(d, "9. Nghề nghiệp", rec.get("nghe_nghiep"))
-    _field_line(d, "10. Điện thoại di động", rec.get("so_dien_thoai"))
-    _field_line(d, "11. Lý do khám sức khỏe", "")
+    _field_line(d, "Xã/Phường", rec.get("phuong"))
+
+    # 9, 10, 11. Thông tin trường học
+    ten_truong = group.get("ten_doan") or ""
+    _checkbox_line(d, [("Có", True), ("Không (chuyển qua câu 12)", False)], prefix="9. Trẻ có đi học: ")
+    _field_line(d, "10. Tên Trường (nếu có)", ten_truong)
+    _field_line(d, "11. Địa chỉ trường", group.get("dia_diem") or "")
+    _field_line(d, "Xã/Phường", "")
+
+    # 12, 13, 14, 15. Người giám hộ & liên hệ
+    _field_line(d, "12. Họ và tên mẹ hoặc người giám hộ (đối với trẻ ≤16 tuổi)", "")
+    _field_line(d, "CCCD của mẹ hoặc người giám hộ", "")
+    _checkbox_line(d, [("Cha", False), ("Mẹ", False), ("Ông/bà", False), ("Anh/chị", False), ("Họ hàng", False), ("Khác", False)], prefix="13. Mối quan hệ với trẻ: ")
+    _field_line(d, "14. Điện thoại di động", rec.get("so_dien_thoai"))
+    _field_line(d, "15. Lý do khám sức khỏe", "Khám sức khỏe học sinh / định kỳ")
 
     _heading(d, "TIỀN SỬ BỆNH TẬT", size=12)
     _p(d, "1. Tiền sử gia đình (bao gồm bố mẹ, anh chị em ruột)", size=11, bold=True)
