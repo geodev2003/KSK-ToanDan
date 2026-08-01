@@ -112,8 +112,8 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
                             leftMargin=15 * mm, rightMargin=15 * mm)
     story = []
 
-    # 1. Dòng đầu tiên trên cùng (Tăng font size 13.5pt, in đậm, căn giữa như Mau02.pdf)
-    m2_style = ParagraphStyle("m2_top", fontName=FONT_BOLD, fontSize=13.5, leading=17, alignment=TA_CENTER)
+    # 1. Dòng đầu tiên trên cùng (Font size 12.5pt, in đậm, căn giữa như Mau02.pdf)
+    m2_style = ParagraphStyle("m2_top", fontName=FONT_BOLD, fontSize=12.5, leading=16, alignment=TA_CENTER)
     story.append(Paragraph("Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI", m2_style))
     story.append(Paragraph("-----", styles["center"]))
     story.append(Spacer(1, 2 * mm))
@@ -160,13 +160,13 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     story.append(_field_row("4. Dân tộc", rec.get("dan_toc")))
     story.append(_field_row("5. Nhóm máu (nếu có)", ""))
 
-    # 6. CCCD dạng ô vuông (12 ô) - cùng 1 dòng
+    # 6. CCCD - BẢNG ĐỘC LẬP 1 (12 ô)
     story.append(_boxes_row_table("6. Số CCCD/Mã số định danh/Hộ chiếu", rec.get("cccd"), 12, 90 * mm))
-    story.append(Spacer(1, 1.2 * mm))
+    story.append(Spacer(1, 2.5 * mm))
 
-    # 7. BHYT dạng ô vuông (15 ô) - cùng 1 dòng
+    # 7. BHYT - BẢNG ĐỘC LẬP 2 (15 ô)
     story.append(_boxes_row_table("7. Số thẻ BHYT", rec.get("ma_bhyt"), 15, 90 * mm))
-    story.append(Spacer(1, 1.2 * mm))
+    story.append(Spacer(1, 2.5 * mm))
 
     dia_chi = ", ".join(x for x in [rec.get("so_nha"), rec.get("khu_pho"), rec.get("phuong"), rec.get("tinh")] if x)
     story.append(_field_row("8. Nơi ở hiện tại", dia_chi))

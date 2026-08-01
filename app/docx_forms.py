@@ -233,8 +233,8 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
 
     gioi = (rec.get("gioi_tinh") or "").strip()
 
-    # 1. Dòng Mẫu 2 trên cùng (Tăng font size 13.5pt, in đậm, căn giữa như Mau02.pdf)
-    _p(d, "Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI", size=13.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=1)
+    # 1. Dòng Mẫu 2 trên cùng (Font size 12.5pt, in đậm, căn giữa như Mau02.pdf)
+    _p(d, "Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI", size=12.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=1)
     _p(d, "-----", size=10, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=4)
 
     # 2. Header Table 2 cột (Trái: Logo + Tên BV + Số / Phải: Quốc hiệu)
