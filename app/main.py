@@ -64,14 +64,18 @@ def _migrate_columns(sync_conn):
                     ), {"p": ",".join(DEFAULT_USER_PERMS)})
 
     # Mở rộng độ dài các cột địa chỉ / thông tin dài trên Postgres để tránh văng lỗi truncation
-    if sync_conn.dialect.name == "postgresql":
-        for tbl in ["records", "expected"]:
+    if "postgresql" in sync_conn.dialect.name:
+        for tbl, cols in [("records", ["so_nha", "khu_pho", "phuong", "tinh", "nghe_nghiep", "his_message"]),
+                          ("expected", ["so_nha", "khu_pho", "phuong", "tinh", "dia_chi"])]:
             if tbl in tables:
-                for col_name in ["so_nha", "khu_pho", "phuong", "tinh", "dia_chi", "nghe_nghiep", "his_message"]:
-                    try:
-                        sync_conn.execute(text(f"ALTER TABLE {tbl} ALTER COLUMN {col_name} TYPE VARCHAR(500)"))
-                    except Exception:
-                        pass
+                existing = {c["name"] for c in insp.get_columns(tbl)}
+                for col_name in cols:
+                    if col_name in existing:
+                        try:
+                            sync_conn.execute(text(f"ALTER TABLE {tbl} ALTER COLUMN {col_name} TYPE VARCHAR(500)"))
+                            sync_conn.commit()
+                        except Exception:
+                            pass
 
 
 @asynccontextmanager
