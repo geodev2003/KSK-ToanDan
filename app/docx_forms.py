@@ -175,7 +175,25 @@ def _checkbox_run(para, text, checked=False, size=10.5):
     _set_font(r, size)
 
 
-def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VIỆN") -> "Document":
+def _add_boxes_line(doc, label, val_str, max_len=12):
+    p = doc.add_paragraph()
+    p.paragraph_format.space_after = Pt(2)
+    r = p.add_run(label + ": ")
+    _set_font(r, 12, bold=False)
+
+    val_str = str(val_str or "").strip()
+    digits = list(val_str[:max_len]) + [""] * max(0, max_len - len(val_str))
+
+    t = doc.add_table(rows=1, cols=max_len)
+    t.alignment = WD_TABLE_ALIGNMENT.LEFT
+    t.style = "Table Grid"
+    for i, d in enumerate(digits):
+        cell = t.rows[0].cells[i]
+        cell.width = Cm(0.55)
+        _set_cell_text(cell, d, size=10, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+
+
+def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VIỆN HỒNG ĐỨC II") -> "Document":
     d = Document()
     section = d.sections[0]
     section.top_margin = Cm(1.5)
@@ -190,13 +208,22 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
 
     gioi = (rec.get("gioi_tinh") or "").strip()
 
-    # ---------- Tiêu đề ----------
-    _p(d, hospital_name.upper(), size=12, bold=True)
+    # ---------- Tiêu đề & Logo ----------
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "images", "logo_hongduc2.png")
+    if os.path.exists(logo_path):
+        p_logo = d.add_paragraph()
+        p_logo.paragraph_format.space_after = Pt(2)
+        r_logo = p_logo.add_run()
+        r_logo.add_picture(logo_path, width=Cm(5.2))
+    else:
+        _p(d, hospital_name.upper(), size=12, bold=True)
+
     _p(d, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
     _p(d, "Độc lập - Tự do - Hạnh phúc", size=12, italic=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=10)
     _p(d, "Số: ……………/GKSK", size=11)
-    _p(d, "GIẤY KHÁM SỨC KHỎE", size=15, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
-    _p(d, "(Theo Thông tư số 25/2026/TT-BYT ngày 30/6/2026 của Bộ Y tế)", size=10.5, italic=True,
+    _p(d, "MẪU 02 - GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
+    _p(d, "DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN DƯỚI 18 TUỔI", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
+    _p(d, "(Ban hành kèm theo Thông tư số 25/2026/TT-BYT ngày 30/6/2026 của Bộ Y tế)", size=10.5, italic=True,
        align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8)
 
     # ---------- THÔNG TIN HÀNH CHÍNH ----------
@@ -206,8 +233,8 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     _field_line(d, "3. Ngày tháng năm sinh", rec.get("ngay_sinh"))
     _field_line(d, "4. Dân tộc", rec.get("dan_toc"))
     _field_line(d, "5. Nhóm máu (nếu có)", "")
-    _field_line(d, "6. Số CCCD / Mã số định danh / Hộ chiếu", rec.get("cccd"))
-    _field_line(d, "7. Số thẻ BHYT", rec.get("ma_bhyt"))
+    _add_boxes_line(d, "6. Số CCCD / Mã số định danh", rec.get("cccd"), 12)
+    _add_boxes_line(d, "7. Số thẻ BHYT", rec.get("ma_bhyt"), 15)
     dia_chi = ", ".join(x for x in [rec.get("so_nha"), rec.get("khu_pho"), rec.get("phuong"), rec.get("tinh")] if x)
     _field_line(d, "8. Nơi ở hiện tại", dia_chi)
     _field_line(d, "9. Nghề nghiệp", rec.get("nghe_nghiep"))

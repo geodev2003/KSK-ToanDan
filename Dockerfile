@@ -1,5 +1,13 @@
 FROM python:3.12-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice \
+    libreoffice-writer \
+    fonts-dejavu \
+    fonts-liberation \
+    fontconfig \
+    && rm -rf /var/lib/apt-get/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt .
