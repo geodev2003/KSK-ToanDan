@@ -63,6 +63,16 @@ def _migrate_columns(sync_conn):
                         "UPDATE users SET perms = :p WHERE role <> 'admin' AND (perms IS NULL OR perms = '')"
                     ), {"p": ",".join(DEFAULT_USER_PERMS)})
 
+    # Mở rộng độ dài các cột địa chỉ / thông tin dài trên Postgres để tránh văng lỗi truncation
+    if sync_conn.dialect.name == "postgresql":
+        for tbl in ["records", "expected"]:
+            if tbl in tables:
+                for col_name in ["so_nha", "khu_pho", "phuong", "tinh", "dia_chi", "nghe_nghiep", "his_message"]:
+                    try:
+                        sync_conn.execute(text(f"ALTER TABLE {tbl} ALTER COLUMN {col_name} TYPE VARCHAR(500)"))
+                    except Exception:
+                        pass
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -283,10 +293,11 @@ async def bulk_import_records(request: Request, gid: int, payload: s.RecordBulkI
     """Nhập hàng loạt bản ghi từ Excel (khác với Expected — đây là DS để đăng ký HIS thật).
     Trùng họ tên + ngày sinh sẽ bị bỏ qua trừ khi force=true (force=true sẽ cập nhật dữ liệu mới).
     Nếu đoàn chưa có mã gói HIS và payload có kèm his_package_code, sẽ tự điền vào đoàn."""
-    def _str(val):
+    def _str(val, max_len=500):
         if val is None:
             return ""
-        return str(val).strip()
+        s = str(val).strip()
+        return s[:max_len] if max_len else s
 
     try:
         g = await db.scalar(select(m.Group).where(m.Group.id == gid))
