@@ -218,7 +218,159 @@ def _add_boxes_line(doc, label, val_str, max_len=12, label_cm=8.5):
         tcPr.append(tcBorders)
 
 
+def _find_template_path():
+    p1 = os.path.join(os.path.dirname(__file__), "templates", "Mau02.docx")
+    p2 = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Mau02.docx")
+    if os.path.exists(p1):
+        return p1
+    if os.path.exists(p2):
+        return p2
+    return None
+
+
+def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5):
+    p.text = ""
+    parent = p._element.getparent()
+    p_idx = parent.index(p._element)
+
+    t = doc.add_table(rows=1, cols=1 + max_len)
+    t.alignment = WD_TABLE_ALIGNMENT.LEFT
+    t.autofit = False
+
+    row = t.rows[0]
+    cell_lbl = row.cells[0]
+    cell_lbl.width = Cm(label_cm)
+    _set_cell_text(cell_lbl, label + ": ", size=11, bold=True)
+
+    tcPr0 = cell_lbl._tc.get_or_add_tcPr()
+    tcBorders0 = OxmlElement('w:tcBorders')
+    for side in ['top', 'left', 'bottom', 'right']:
+        b = OxmlElement(f'w:{side}')
+        b.set(qn('w:val'), 'none')
+        tcBorders0.append(b)
+    tcPr0.append(tcBorders0)
+
+    val_str = str(val_str or "").strip()
+    digits = list(val_str[:max_len]) + [""] * max(0, max_len - len(val_str))
+
+    for i, d in enumerate(digits):
+        cell = row.cells[1 + i]
+        cell.width = Cm(0.42)
+        _set_cell_text(cell, d, size=9.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+
+        tcPr = cell._tc.get_or_add_tcPr()
+        tcBorders = OxmlElement('w:tcBorders')
+        for side in ['top', 'left', 'bottom', 'right']:
+            b = OxmlElement(f'w:{side}')
+            b.set(qn('w:val'), 'single')
+            b.set(qn('w:sz'), '4')
+            b.set(qn('w:space'), '0')
+            b.set(qn('w:color'), '000000')
+            tcBorders.append(b)
+        tcPr.append(tcBorders)
+
+    parent.remove(t._element)
+    parent.insert(p_idx + 1, t._element)
+
+
 def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VIỆN HỒNG ĐỨC II") -> "Document":
+    tpl_path = _find_template_path()
+    if not tpl_path:
+        return _build_form_scratch(rec, group, hospital_name)
+
+    d = Document(tpl_path)
+    gioi = (rec.get("gioi_tinh") or "").strip()
+    ten_truong = group.get("ten_doan") or ""
+    dia_diem = group.get("dia_diem") or ""
+
+    for p in list(d.paragraphs):
+        txt = p.text.strip()
+        if "Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE" in txt:
+            p.text = ""
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_after = Pt(1)
+            r = p.add_run("Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI")
+            _set_font(r, 12.5, bold=True)
+        elif "Họ và tên (viết chữ in hoa)" in txt:
+            p.text = ""
+            r1 = p.add_run("1. Họ và tên (viết chữ in hoa): ")
+            _set_font(r1, 12)
+            r2 = p.add_run((rec.get("ho_ten") or "").upper())
+            _set_font(r2, 12, bold=True)
+        elif "Giới tính:" in txt:
+            p.text = ""
+            r1 = p.add_run("2. Giới tính:  ")
+            _set_font(r1, 12)
+            nam_box = CHECKED if gioi == "Nam" else CHECK
+            nu_box = CHECKED if gioi == "Nữ" else CHECK
+            r2 = p.add_run(f"{nam_box} Nam     {nu_box} Nữ")
+            _set_font(r2, 12)
+        elif "Ngày tháng năm sinh:" in txt:
+            p.text = ""
+            r1 = p.add_run("3. Ngày tháng năm sinh: ")
+            _set_font(r1, 12)
+            r2 = p.add_run(str(rec.get("ngay_sinh") or ""))
+            _set_font(r2, 12, bold=True)
+        elif "Dân tộc:" in txt and "4." in txt:
+            p.text = ""
+            r1 = p.add_run("4. Dân tộc: ")
+            _set_font(r1, 12)
+            r2 = p.add_run(str(rec.get("dan_toc") or ""))
+            _set_font(r2, 12, bold=True)
+        elif "Nhóm máu (nếu có):" in txt:
+            p.text = ""
+            r1 = p.add_run("5. Nhóm máu (nếu có): ")
+            _set_font(r1, 12)
+        elif "Số CCCD/Mã số định danh/Hộ chiếu" in txt:
+            _insert_boxes_row(d, p, "6. Số CCCD/Mã số định danh/Hộ chiếu", rec.get("cccd"), 12, 8.5)
+        elif "Số thẻ BHYT:" in txt:
+            _insert_boxes_row(d, p, "7. Số thẻ BHYT", rec.get("ma_bhyt"), 15, 8.5)
+        elif "Nơi ở hiện tại:" in txt:
+            p.text = ""
+            r1 = p.add_run("8. Nơi ở hiện tại: ")
+            _set_font(r1, 12)
+            dia_chi = ", ".join(x for x in [rec.get("so_nha"), rec.get("khu_pho"), rec.get("phuong"), rec.get("tinh")] if x)
+            r2 = p.add_run(dia_chi)
+            _set_font(r2, 12, bold=True)
+        elif "Xã/Phường:" in txt:
+            p.text = ""
+            r1 = p.add_run("Xã/Phường: ")
+            _set_font(r1, 12)
+            r2 = p.add_run(str(rec.get("phuong") or ""))
+            _set_font(r2, 12, bold=True)
+        elif "Trẻ có đi học:" in txt:
+            p.text = ""
+            r1 = p.add_run(f"9. Trẻ có đi học:   {CHECKED} Có   {CHECK} Không (chuyển qua câu 12)")
+            _set_font(r1, 12)
+        elif "Tên Trường (nếu có):" in txt:
+            p.text = ""
+            r1 = p.add_run("10. Tên Trường (nếu có): ")
+            _set_font(r1, 12)
+            r2 = p.add_run(f"{ten_truong}")
+            _set_font(r2, 12, bold=True)
+        elif "Địa chỉ trường:" in txt:
+            p.text = ""
+            r1 = p.add_run("11. Địa chỉ trường: ")
+            _set_font(r1, 12)
+            r2 = p.add_run(f"{dia_diem}")
+            _set_font(r2, 12, bold=True)
+        elif "Điện thoại di động:" in txt:
+            p.text = ""
+            r1 = p.add_run("14. Điện thoại di động: ")
+            _set_font(r1, 12)
+            r2 = p.add_run(str(rec.get("so_dien_thoai") or ""))
+            _set_font(r2, 12, bold=True)
+        elif "Lý do khám sức khỏe:" in txt:
+            p.text = ""
+            r1 = p.add_run("15. Lý do khám sức khỏe: ")
+            _set_font(r1, 12)
+            r2 = p.add_run("Khám sức khỏe học sinh định kỳ")
+            _set_font(r2, 12)
+
+    return d
+
+
+def _build_form_scratch(rec: dict, group: dict, hospital_name: str = "BỆNH VIỆN HỒNG ĐỨC II") -> "Document":
     d = Document()
     section = d.sections[0]
     section.top_margin = Cm(1.2)
@@ -418,6 +570,9 @@ def save_docx(doc: "Document") -> bytes:
 def docx_to_pdf(docx_bytes: bytes, timeout: int = 40, rec: dict = None, group: dict = None) -> bytes:
     """Convert .docx -> .pdf bằng LibreOffice headless (đảm bảo PDF khớp bản Word).
     Nếu LibreOffice chưa cài đặt hoặc gặp lỗi, tự động fallback sang ReportLab generator."""
+    if hasattr(docx_bytes, "save"):
+        docx_bytes = save_docx(docx_bytes)
+
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "form.docx")
         with open(src, "wb") as f:
