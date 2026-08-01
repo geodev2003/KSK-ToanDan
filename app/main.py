@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone, date as _date
 
 from fastapi import FastAPI, Depends, HTTPException, Request, Query
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +21,7 @@ from .security import (
     require_perm, user_can, ALL_PERMS, DEFAULT_USER_PERMS,
 )
 from . import his_client
+from . import docx_forms
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
@@ -750,6 +752,120 @@ async def unregister_record_his(request: Request, rid: int,
         return {"ok": True, "message": res["message"], "record": s.RecordOut.model_validate(rec)}
     except his_client.HisError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# =================== BULK DELETE & EXPORT MAU 02 ===================
+@app.post("/api/records/bulk-delete")
+async def bulk_delete_records(request: Request, payload: s.RecordBulkDelete,
+                              user: m.User = Depends(require_perm("delete_record")),
+                              db: AsyncSession = Depends(get_db)):
+    """Xóa hàng loạt các bản ghi theo danh sách record_ids."""
+    if not payload.record_ids:
+        raise HTTPException(status_code=400, detail="Danh sách bản ghi rỗng")
+
+    res = await db.execute(select(m.Record).where(m.Record.id.in_(payload.record_ids)))
+    records = res.scalars().all()
+    count = len(records)
+    for r in records:
+        await db.delete(r)
+    await log_action(db, request, user, "BULK_DELETE_RECORDS", "record", "", f"Đã xóa {count} bản ghi")
+    await db.commit()
+    return {"deleted": count}
+
+
+@app.get("/api/records/{rid}/export/docx")
+async def export_record_docx(rid: int, db: AsyncSession = Depends(get_db),
+                              user: m.User = Depends(get_current_user)):
+    """Xuất Mẫu 02 (.docx edit được) cho 1 bệnh nhân."""
+    rec = await db.scalar(select(m.Record).where(m.Record.id == rid))
+    if not rec:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi")
+    g = await db.scalar(select(m.Group).where(m.Group.id == rec.group_id))
+    rec_dict = s.RecordOut.model_validate(rec).model_dump()
+    rec_dict["id"] = rec.id
+    group_dict = s.GroupOut.model_validate(g).model_dump() if g else {}
+
+    doc = docx_forms.build_patient_form(rec_dict, group_dict)
+    docx_bytes = docx_forms.save_docx(doc)
+    filename = f"Mau02_{(rec.ho_ten or 'khach_hang').replace(' ', '_')}.docx"
+    return Response(content=docx_bytes, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/api/records/{rid}/export/pdf")
+async def export_record_pdf(rid: int, db: AsyncSession = Depends(get_db),
+                             user: m.User = Depends(get_current_user)):
+    """Xuất Mẫu 02 (.pdf) xem trước hoặc in cho 1 bệnh nhân."""
+    rec = await db.scalar(select(m.Record).where(m.Record.id == rid))
+    if not rec:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi")
+    g = await db.scalar(select(m.Group).where(m.Group.id == rec.group_id))
+    rec_dict = s.RecordOut.model_validate(rec).model_dump()
+    rec_dict["id"] = rec.id
+    group_dict = s.GroupOut.model_validate(g).model_dump() if g else {}
+
+    doc = docx_forms.build_patient_form(rec_dict, group_dict)
+    docx_bytes = docx_forms.save_docx(doc)
+    pdf_bytes = docx_forms.docx_to_pdf(docx_bytes, rec=rec_dict, group=group_dict)
+    filename = f"Mau02_{(rec.ho_ten or 'khach_hang').replace(' ', '_')}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
+
+@app.post("/api/records/export/docx")
+async def export_bulk_docx(payload: s.RecordBulkExport, db: AsyncSession = Depends(get_db),
+                            user: m.User = Depends(get_current_user)):
+    """Xuất gộp Mẫu 02 (.docx) cho danh sách bệnh nhân được chọn."""
+    if not payload.record_ids:
+        raise HTTPException(status_code=400, detail="Chưa chọn khách hàng nào")
+    res = await db.execute(select(m.Record).where(m.Record.id.in_(payload.record_ids)))
+    records = res.scalars().all()
+    if not records:
+        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu")
+
+    groups_res = await db.execute(select(m.Group))
+    group_map = {g.id: s.GroupOut.model_validate(g).model_dump() for g in groups_res.scalars().all()}
+
+    docs = []
+    for r in records:
+        rec_dict = s.RecordOut.model_validate(r).model_dump()
+        rec_dict["id"] = r.id
+        g_dict = group_map.get(r.group_id, {})
+        docs.append(docx_forms.build_patient_form(rec_dict, g_dict))
+
+    merged_doc = docx_forms.merge_docs(docs)
+    docx_bytes = docx_forms.save_docx(merged_doc)
+    return Response(content=docx_bytes, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": 'attachment; filename="Mau02_DanhSach.docx"'})
+
+
+@app.post("/api/records/export/pdf")
+async def export_bulk_pdf(payload: s.RecordBulkExport, db: AsyncSession = Depends(get_db),
+                           user: m.User = Depends(get_current_user)):
+    """Xuất gộp Mẫu 02 (.pdf) xem trước hoặc in cho danh sách bệnh nhân được chọn."""
+    if not payload.record_ids:
+        raise HTTPException(status_code=400, detail="Chưa chọn khách hàng nào")
+    res = await db.execute(select(m.Record).where(m.Record.id.in_(payload.record_ids)))
+    records = res.scalars().all()
+    if not records:
+        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu")
+
+    groups_res = await db.execute(select(m.Group))
+    group_map = {g.id: s.GroupOut.model_validate(g).model_dump() for g in groups_res.scalars().all()}
+
+    pdf_list = []
+    for r in records:
+        rec_dict = s.RecordOut.model_validate(r).model_dump()
+        rec_dict["id"] = r.id
+        g_dict = group_map.get(r.group_id, {})
+        doc = docx_forms.build_patient_form(rec_dict, g_dict)
+        docx_bytes = docx_forms.save_docx(doc)
+        pdf_bytes = docx_forms.docx_to_pdf(docx_bytes, rec=rec_dict, group=g_dict)
+        pdf_list.append(pdf_bytes)
+
+    merged_pdf = docx_forms.merge_pdfs(pdf_list)
+    return Response(content=merged_pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="Mau02_DanhSach.pdf"'})
 
 
 # =================== LOGS ===================

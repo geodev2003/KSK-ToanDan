@@ -122,6 +122,14 @@ class HisRegisterOne(BaseModel):
     force: bool = False
 
 
+class RecordBulkDelete(BaseModel):
+    record_ids: list[int]
+
+
+class RecordBulkExport(BaseModel):
+    record_ids: list[int]
+
+
 # ---------- Expected ----------
 class ExpectedItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)

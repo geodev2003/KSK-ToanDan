@@ -212,7 +212,9 @@
         <button class="btn hidden" data-perm="create_record" onclick="importRecordsPrompt()">📥 Nhập DS đăng ký (Excel)</button>
         <button class="btn" id="recCopyBtn" onclick="copyRecSelected()">📋 Copy đã chọn</button>
         <button class="btn hidden" data-perm="his_register" onclick="hisRegisterSelected()">🏥 Đăng ký HIS (đã chọn)</button>
+        <button class="btn" onclick="openMau02Selected()">📄 Mẫu 02 (Word/PDF/In)</button>
         <button class="btn hidden" data-perm="export" onclick="exportExcel()">⤓ Xuất Excel (HIS)</button>
+        <button class="btn hidden" style="background:var(--danger);color:#fff" data-perm="delete_record" id="recDelBtn" onclick="bulkDeleteSelected()">🗑 Xóa đã chọn</button>
       </div>
       <div class="tbl-wrap">
         <table><thead><tr>
@@ -548,6 +550,7 @@ function renderRecords(){
   body.innerHTML=view.map(({r,stt})=>`<tr class="${dupSet.has(r.id)?'dup':''}${sel.has(r.id)?' sel':''}">
     <td style="text-align:center"><input type="checkbox" ${sel.has(r.id)?'checked':''} onclick="toggleRecRow(${r.id},this)"></td>
     <td><div class="row-act"><button class="icon-btn" title="Copy cả dòng" onclick="copyRecOne(${r.id})">📋</button>
+      <button class="icon-btn" title="Xuất Mẫu 02 (In/Word/PDF)" onclick="openMau02One(${r.id})">📄</button>
       ${can('his_register')?`<button class="icon-btn" title="Đăng ký HIS" onclick="hisRegisterOne(${r.id})">🏥</button>`:''}
       ${can('his_register')&&r.his_status==='registered'?`<button class="icon-btn del" title="Hủy đăng ký HIS" onclick="hisUnregister(${r.id})">⊘</button>`:''}
       ${can('edit_record')?`<button class="icon-btn" title="Sửa" onclick="openEntry(${r.id})">✎</button>`:''}
@@ -578,8 +581,149 @@ function toggleRecRow(id,el){ const s=state.recSel; if(el.checked)s.add(id);else
   const all=document.getElementById("rec_all"); const vis=recVisibleIds();
   if(all)all.checked=vis.length>0&&vis.every(x=>s.has(x)); }
 function toggleRecAll(el){ const s=state.recSel; recVisibleIds().forEach(id=>{ el.checked?s.add(id):s.delete(id); }); renderRecords(); }
-function updateRecCopyBtn(){ const b=document.getElementById("recCopyBtn"); if(!b)return;
-  const n=state.recSel.size; b.textContent=n?`📋 Copy đã chọn (${n})`:"📋 Copy tất cả (đang lọc)"; }
+function updateRecCopyBtn(){
+  const b=document.getElementById("recCopyBtn");
+  const bd=document.getElementById("recDelBtn");
+  const n=state.recSel.size;
+  if(b) b.textContent=n?`📋 Copy đã chọn (${n})`:"📋 Copy tất cả (đang lọc)";
+  if(bd) bd.textContent=n?`🗑 Xóa đã chọn (${n})`:"🗑 Xóa đã chọn";
+}
+
+/* ============ XÓA HÀNG LOẠT ============ */
+async function bulkDeleteSelected(){
+  const ids = Array.from(state.recSel);
+  if(!ids.length){ toast("Chưa chọn khách hàng nào để xóa", "err"); return; }
+  if(!confirm(`Bạn có chắc chắn muốn XÓA HÀNG LOẠT ${ids.length} khách hàng đã chọn không?`)) return;
+
+  toast(`Đang xóa ${ids.length} khách hàng...`);
+  try{
+    const res = await api("POST", "/api/records/bulk-delete", { record_ids: ids });
+    toast(`Đã xóa thành công ${res.deleted} khách hàng`, "ok");
+    state.recSel.clear();
+    await loadRecords(); await loadGroups();
+  }catch(e){ toast(e.message, "err"); }
+}
+
+/* ============ MAU 02 PREVIEW & EXPORT ============ */
+let currentMau02Ids = [];
+
+async function openMau02One(rid){
+  currentMau02Ids = [rid];
+  await showMau02Modal();
+}
+
+async function openMau02Selected(){
+  const ids = Array.from(state.recSel);
+  if(!ids.length){
+    const vis = recVisibleIds();
+    if(!vis.length){ toast("Không có khách hàng nào để xuất Mẫu 02", "err"); return; }
+    currentMau02Ids = vis;
+  }else{
+    currentMau02Ids = ids;
+  }
+  await showMau02Modal();
+}
+
+async function showMau02Modal(){
+  const title = currentMau02Ids.length === 1 ? "Xem trước Mẫu 02 (1 khách hàng)" : `Xem trước Mẫu 02 (${currentMau02Ids.length} khách hàng được chọn)`;
+
+  let pdfUrl = "";
+  if(currentMau02Ids.length === 1){
+    pdfUrl = API_BASE + `/api/records/${currentMau02Ids[0]}/export/pdf`;
+  }else{
+    toast("Đang nạp xem trước Mẫu 02...");
+    try{
+      const headers = {};
+      if(TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+      headers["Content-Type"] = "application/json";
+      const res = await fetch(API_BASE + "/api/records/export/pdf", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ record_ids: currentMau02Ids })
+      });
+      if(!res.ok) throw new Error("Lỗi nạp PDF: " + res.status);
+      const blob = await res.blob();
+      pdfUrl = URL.createObjectURL(blob);
+    }catch(e){
+      toast("Không nạp được bản xem trước PDF: " + e.message, "err");
+      pdfUrl = "";
+    }
+  }
+
+  openModal(`
+    <div style="width:92vw;max-width:980px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <h3 style="margin:0;font-size:16px">${esc(title)}</h3>
+        <div style="display:flex;gap:8px">
+          <button class="btn sm primary" onclick="downloadMau02Docx()">📥 Tải bản Word (.docx)</button>
+          <button class="btn sm" onclick="downloadMau02Pdf()">📥 Tải bản PDF (.pdf)</button>
+          <button class="btn sm" onclick="printMau02Pdf()">🖨 In ngay</button>
+        </div>
+      </div>
+      <div style="flex:1;height:620px;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
+        ${pdfUrl ? `<iframe id="mau02Iframe" src="${pdfUrl}" style="width:100%;height:100%;border:none"></iframe>` : '<div style="padding:40px;text-align:center">Đang nạp PDF...</div>'}
+      </div>
+    </div>
+  `);
+}
+
+async function downloadMau02Docx(){
+  if(!currentMau02Ids.length) return;
+  toast("Đang tạo file Word Mẫu 02...");
+  const headers = {};
+  if(TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+
+  if(currentMau02Ids.length === 1){
+    window.open(API_BASE + `/api/records/${currentMau02Ids[0]}/export/docx`, "_blank");
+  }else{
+    headers["Content-Type"] = "application/json";
+    const res = await fetch(API_BASE + "/api/records/export/docx", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ record_ids: currentMau02Ids })
+    });
+    if(!res.ok){ toast("Lỗi tải file Word", "err"); return; }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "Mau02_DanhSach.docx";
+    a.click();
+    toast("Đã xuất file Word Mẫu 02", "ok");
+  }
+}
+
+async function downloadMau02Pdf(){
+  if(!currentMau02Ids.length) return;
+  toast("Đang tạo file PDF Mẫu 02...");
+  if(currentMau02Ids.length === 1){
+    window.open(API_BASE + `/api/records/${currentMau02Ids[0]}/export/pdf`, "_blank");
+  }else{
+    const headers = {};
+    if(TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+    headers["Content-Type"] = "application/json";
+    const res = await fetch(API_BASE + "/api/records/export/pdf", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ record_ids: currentMau02Ids })
+    });
+    if(!res.ok){ toast("Lỗi tải file PDF", "err"); return; }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "Mau02_DanhSach.pdf";
+    a.click();
+    toast("Đã xuất file PDF Mẫu 02", "ok");
+  }
+}
+
+function printMau02Pdf(){
+  const iframe = document.getElementById("mau02Iframe");
+  if(iframe && iframe.contentWindow){
+    iframe.contentWindow.print();
+  }else{
+    toast("Mở file PDF để in", "hint");
+  }
+}
 function recRowText(r,stt){ return [r.his_patient_code||"",stt,r.cccd,r.ma_bhyt,r.ho_ten,r.ngay_sinh,r.gioi_tinh,r.so_dien_thoai,
   r.nghe_nghiep,r.so_nha,r.khu_pho,r.phuong,r.tinh,sessionText(r)].join("\t"); }
 async function copyRecOne(id){ const r=state.records.find(x=>x.id===id); if(!r)return;
