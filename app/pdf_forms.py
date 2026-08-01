@@ -108,21 +108,28 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     styles = _styles()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
-                            topMargin=12 * mm, bottomMargin=12 * mm,
+                            topMargin=10 * mm, bottomMargin=10 * mm,
                             leftMargin=15 * mm, rightMargin=15 * mm)
     story = []
 
-    # ---------- Tiêu đề & Logo ----------
+    # 1. Dòng đầu tiên trên cùng
+    story.append(Paragraph("Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI", styles["small"]))
+    story.append(Paragraph("-----", styles["small"]))
+    story.append(Spacer(1, 2 * mm))
+
+    # 2. Bảng Header 2 cột (Trái: Logo + Tên BV + Số / Phải: Quốc hiệu)
     logo_path = os.path.join(_ROOT_DIR, "static", "images", "logo_hongduc2.png")
     left_cell = []
     if os.path.exists(logo_path):
         left_cell.append(Image(logo_path, width=48 * mm, height=16 * mm))
     left_cell.append(Paragraph(f"<b>{hospital_name.upper()}</b>", styles["small"]))
+    left_cell.append(Spacer(1, 1 * mm))
+    left_cell.append(Paragraph(f"Số: {BLANK}/GKSK-{BLANK}", styles["normal"]))
 
     right_cell = [
         Paragraph("<b>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</b>", styles["title"]),
         Paragraph("<b>Độc lập - Tự do - Hạnh phúc</b>", styles["sub"]),
-        Paragraph("-------------------------", styles["sub"]),
+        Paragraph("_________________________", styles["sub"]),
     ]
 
     header_tbl = Table([[left_cell, right_cell]], colWidths=[65 * mm, 115 * mm])
@@ -134,12 +141,11 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
         ('RIGHTPADDING', (0,0), (-1,-1), 0),
     ]))
     story.append(header_tbl)
-    story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph(f"Số: {BLANK}/GKSK-{BLANK}", styles["normal"]))
-    story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph("<b>MẪU 02 - GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ</b>", styles["title"]))
-    story.append(Paragraph("<b>DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN DƯỚI 18 TUỔI</b>", styles["title"]))
-    story.append(Paragraph("(Ban hành kèm theo Thông tư số 25/2026/TT-BYT ngày 30/6/2026 của Bộ Y tế)", styles["sub"]))
+    story.append(Spacer(1, 3 * mm))
+
+    # 3. Tiêu đề MẪU 02 nằm ở giữa phía dưới "Số: ...."
+    story.append(Paragraph("<b>MẪU 02 - GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN DƯỚI 18 TUỔI</b>", styles["title"]))
+    story.append(Paragraph("(Ban hành kèm theo Thông tư số 25/2026/TT-BYT ngày 30 tháng 6 năm 2026 của Bộ Y tế)", styles["sub"]))
     story.append(Spacer(1, 3 * mm))
 
     # ---------- I. Thông tin hành chính (Đầy đủ 15 mục theo Mẫu 02) ----------

@@ -233,7 +233,11 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
 
     gioi = (rec.get("gioi_tinh") or "").strip()
 
-    # ---------- Tiêu đề & Logo (Header Table 2 cột) ----------
+    # 1. Dòng Mẫu 2 trên cùng
+    _p(d, "Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN 18 TUỔI", size=9.5, space_after=1)
+    _p(d, "-----", size=9.5, space_after=4)
+
+    # 2. Header Table 2 cột (Trái: Logo + Tên BV + Số / Phải: Quốc hiệu)
     logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "images", "logo_hongduc2.png")
     tbl_hdr = d.add_table(rows=1, cols=2)
     tbl_hdr.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -251,6 +255,10 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     p_hname.paragraph_format.space_after = Pt(2)
     _set_font(p_hname.add_run(hospital_name.upper()), 10, bold=True)
 
+    p_so = cell_l.add_paragraph()
+    p_so.paragraph_format.space_after = Pt(2)
+    _set_font(p_so.add_run("Số: ……./GKSK-........."), 11)
+
     p_r1 = cell_r.paragraphs[0]
     p_r1.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_r1.paragraph_format.space_after = Pt(2)
@@ -264,12 +272,11 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     p_r3 = cell_r.add_paragraph()
     p_r3.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_r3.paragraph_format.space_after = Pt(4)
-    _set_font(p_r3.add_run("---------------------"), 10)
+    _set_font(p_r3.add_run("_________________________"), 10)
 
-    _p(d, "Số: ……………/GKSK", size=11, space_before=4, space_after=4)
-    _p(d, "MẪU 02 - GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
-    _p(d, "DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN DƯỚI 18 TUỔI", size=12, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
-    _p(d, "(Ban hành kèm theo Thông tư số 25/2026/TT-BYT ngày 30/6/2026 của Bộ Y tế)", size=10, italic=True,
+    # 3. Tiêu đề MẪU 02 nằm ở giữa phía dưới "Số: ...."
+    _p(d, "MẪU 02 - GIẤY KHÁM SỨC KHỎE VÀ KHÁM SỨC KHỎE ĐỊNH KỲ DÙNG CHO TRẺ TỪ ĐỦ 06 TUỔI ĐẾN DƯỚI 18 TUỔI", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=6, space_after=2)
+    _p(d, "(Ban hành kèm theo Thông tư số 25/2026/TT-BYT ngày 30 tháng 6 năm 2026 của Bộ Y tế)", size=10, italic=True,
        align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8)
 
     # ---------- THÔNG TIN HÀNH CHÍNH (Đầy đủ 15 mục theo Mẫu 02) ----------
