@@ -67,12 +67,15 @@ def _field_line(doc, label, value, dots=60):
     return para
 
 
-def _checkbox_line(doc, options):
+def _checkbox_line(doc, options, prefix=""):
     """options: list[(label, checked_bool)]"""
     para = doc.add_paragraph()
     para.paragraph_format.space_after = Pt(3)
+    if prefix:
+        r_pre = para.add_run(prefix)
+        _set_font(r_pre, 12, bold=False)
     for i, (label, checked) in enumerate(options):
-        r = para.add_run(("     " if i else "") + (CHECKED if checked else CHECK) + " " + label)
+        r = para.add_run(("     " if (i or prefix) else "") + (CHECKED if checked else CHECK) + " " + label)
         _set_font(r, 12)
     return para
 
