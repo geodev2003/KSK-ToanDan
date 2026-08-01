@@ -694,18 +694,24 @@ function toggleMau02Expanded(){
   const iframeContainer = document.getElementById("mau02IframeContainer");
   const btn = document.getElementById("mau02ExpandBtn");
   if(!container) return;
+  const modalEl = container.closest(".modal");
+  const overlayEl = container.closest(".overlay");
 
   if(container.dataset.expanded === "1"){
     container.dataset.expanded = "0";
     container.style.maxWidth = "980px";
     container.style.width = "92vw";
-    if(iframeContainer) iframeContainer.style.height = "620px";
-    if(btn) btn.innerHTML = "⛶ Mở rộng";
+    if(modalEl){ modalEl.style.maxWidth = "980px"; modalEl.style.width = "92vw"; modalEl.style.height = "auto"; }
+    if(overlayEl){ overlayEl.style.padding = "40px 16px"; }
+    if(iframeContainer) iframeContainer.style.height = "680px";
+    if(btn) btn.innerHTML = "⛶ Mở rộng chiều cao & rộng";
   }else{
     container.dataset.expanded = "1";
     container.style.maxWidth = "98vw";
     container.style.width = "98vw";
-    if(iframeContainer) iframeContainer.style.height = "82vh";
+    if(modalEl){ modalEl.style.maxWidth = "98vw"; modalEl.style.width = "98vw"; modalEl.style.height = "calc(100vh - 20px)"; }
+    if(overlayEl){ overlayEl.style.padding = "10px 8px"; }
+    if(iframeContainer) iframeContainer.style.height = "calc(100vh - 95px)";
     if(btn) btn.innerHTML = "🗗 Thu nhỏ";
   }
 }
@@ -763,7 +769,7 @@ async function showMau02Modal(){
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <h3 style="margin:0;font-size:16px">${esc(title)}</h3>
         <div style="display:flex;gap:8px;align-items:center">
-          <button id="mau02ExpandBtn" class="btn sm" onclick="toggleMau02Expanded()" title="Mở rộng / Thu nhỏ khung xem trước">⛶ Mở rộng</button>
+          <button id="mau02ExpandBtn" class="btn sm" onclick="toggleMau02Expanded()" title="Mở rộng toàn bộ chiều cao & rộng để xem trước">⛶ Mở rộng chiều cao & rộng</button>
           <button class="btn sm primary" onclick="downloadMau02Docx()">📥 Tải bản Word (.docx)</button>
           <button class="btn sm" onclick="downloadMau02Pdf()">📥 Tải bản PDF (.pdf)</button>
           <button class="btn sm" onclick="printMau02Pdf()">🖨 In ngay</button>
