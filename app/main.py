@@ -1,6 +1,7 @@
 import os
 import json
 import re as _re
+from urllib.parse import quote
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone, date as _date
 
@@ -787,9 +788,9 @@ async def export_record_docx(rid: int, db: AsyncSession = Depends(get_db),
 
     doc = docx_forms.build_patient_form(rec_dict, group_dict)
     docx_bytes = docx_forms.save_docx(doc)
-    filename = f"Mau02_{(rec.ho_ten or 'khach_hang').replace(' ', '_')}.docx"
+    fname = quote(f"Mau02_{(rec.ho_ten or 'khach_hang').replace(' ', '_')}.docx")
     return Response(content=docx_bytes, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+                    headers={"Content-Disposition": f"attachment; filename*=utf-8''{fname}"})
 
 
 @app.get("/api/records/{rid}/export/pdf")
@@ -807,9 +808,9 @@ async def export_record_pdf(rid: int, db: AsyncSession = Depends(get_db),
     doc = docx_forms.build_patient_form(rec_dict, group_dict)
     docx_bytes = docx_forms.save_docx(doc)
     pdf_bytes = docx_forms.docx_to_pdf(docx_bytes, rec=rec_dict, group=group_dict)
-    filename = f"Mau02_{(rec.ho_ten or 'khach_hang').replace(' ', '_')}.pdf"
+    fname = quote(f"Mau02_{(rec.ho_ten or 'khach_hang').replace(' ', '_')}.pdf")
     return Response(content=pdf_bytes, media_type="application/pdf",
-                    headers={"Content-Disposition": f'inline; filename="{filename}"'})
+                    headers={"Content-Disposition": f"inline; filename*=utf-8''{fname}"})
 
 
 @app.post("/api/records/export/docx")
