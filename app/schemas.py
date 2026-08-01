@@ -45,12 +45,22 @@ class GroupBase(BaseModel):
     ten_doan: str
     thoi_gian_kham: str = ""
     dia_diem: str = ""
+    his_package_id: str = ""
+    his_package_code: str = ""
+    his_package_name: str = ""
+    his_package_price: str = ""
+    his_service_flags: str = ""
 
 
 class GroupUpdate(BaseModel):
     ten_doan: Optional[str] = None
     thoi_gian_kham: Optional[str] = None
     dia_diem: Optional[str] = None
+    his_package_id: Optional[str] = None
+    his_package_code: Optional[str] = None
+    his_package_name: Optional[str] = None
+    his_package_price: Optional[str] = None
+    his_service_flags: Optional[str] = None
 
 
 class GroupOut(GroupBase):
@@ -64,10 +74,16 @@ class GroupOut(GroupBase):
 class RecordBase(BaseModel):
     cccd: str = ""
     ma_bhyt: str = ""
-    ho_ten: str
+    ho_ten: str = ""
     ngay_sinh: str = ""
     gioi_tinh: str = ""
     nghe_nghiep: str = ""
+    career_id: str = ""
+    dan_toc: str = ""
+    ethnic_group_id: str = ""
+    quoc_tich: str = ""
+    nationality_id: str = ""
+    province_id: str = ""
     so_nha: str = ""
     khu_pho: str = ""
     phuong: str = ""
@@ -91,6 +107,12 @@ class RecordOut(RecordBase):
     his_registered_at: str = ""
 
 
+class RecordBulkImport(BaseModel):
+    records: list[RecordBase]
+    force: bool = False           # true = vẫn thêm dù trùng họ tên+ngày sinh
+    his_package_code: str = ""    # nếu đoàn chưa có mã gói HIS, sẽ tự điền từ đây
+
+
 class HisBulkRegister(BaseModel):
     record_ids: list[int]
     force: bool = False
@@ -109,6 +131,8 @@ class ExpectedItem(BaseModel):
     ho_ten: str
     ngay_sinh: str = ""
     gioi_tinh: str = ""
+    dan_toc: str = ""
+    quoc_tich: str = ""
     so_nha: str = ""
     khu_pho: str = ""
     phuong: str = ""

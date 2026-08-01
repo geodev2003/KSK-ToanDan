@@ -9,6 +9,7 @@ Cấu hình lưu trong bảng settings (key='his_config') dạng JSON. appkey/us
 phiên đăng nhập HIS — sẽ hết hạn, khi đó admin dán lại từ công cụ sniffer.
 """
 import json
+import unicodedata
 from datetime import datetime, date, timezone, timedelta
 
 import httpx
@@ -51,16 +52,103 @@ DEFAULT_CONFIG = {
 }
 
 
-def _build_list_order(cfg):
-    p = cfg["package"]
+def _build_list_order(pkg):
     return [{
-        "created": "", "s_name": p.get("s_name", ""), "enum_examination_type": "",
-        "mobile_code_order": p.get("mobile_code_order", ""), "mobile_name_order": "",
-        "mobile_id": "", "valid": "", "normal_price": p.get("normal_price", 0),
+        "created": "", "s_name": pkg.get("s_name", ""), "enum_examination_type": "",
+        "mobile_code_order": pkg.get("mobile_code_order", ""), "mobile_name_order": "",
+        "mobile_id": "", "valid": "", "normal_price": pkg.get("normal_price", 0),
         "insurance_price": 0, "overtime_price": 0, "other_price": 0, "insurance_remuneration": 0,
-        "item_id": p["service_id"], "item_type": "consultation_package",
+        "item_id": pkg["service_id"], "item_type": "consultation_package",
         "key": 0, "name": "", "allow_choose_doctor": False, "paid": 1,
     }]
+
+
+def _no_accent(s: str) -> str:
+    s = unicodedata.normalize("NFD", str(s or ""))
+    return "".join(c for c in s if unicodedata.category(c) != "Mn").lower().strip()
+
+
+async def search_packages(cfg: dict, q: str = "") -> list:
+    """Lấy danh sách gói khám trên HIS (duyệt các trang) rồi lọc theo từ khóa (mã code hoặc tên,
+    không phân biệt dấu) ngay tại app — không phụ thuộc bộ lọc phía HIS."""
+    collected = {}
+    page, max_pages = 1, 10
+    while page <= max_pages:
+        data = await _post(cfg, "service_package/find", {"page": page})
+        d = data.get("data") or {}
+        rows = d.get("data_list") or []
+        for r in rows:
+            collected[r.get("service_id")] = r
+        paging = d.get("paging") or {}
+        total_page = paging.get("total_page") or 1
+        if page >= total_page or not rows:
+            break
+        page += 1
+    out = []
+    for r in collected.values():
+        out.append({
+            "service_id": r.get("service_id"),
+            "code": (r.get("code") or "").strip(),
+            "name": (r.get("vi_name") or "").strip(),
+            "normal_price": r.get("normal_price") or 0,
+            "disabled": r.get("disabled", 0),
+        })
+    qn = _no_accent(q)
+    if qn:
+        out = [p for p in out if qn in _no_accent(p["code"]) or qn in _no_accent(p["name"])]
+    out.sort(key=lambda p: (p.get("disabled", 0), p["name"]))
+    return out
+
+
+async def resolve_package_by_code(cfg: dict, code: str) -> dict:
+    """Tìm gói theo mã code, trả về gói khớp (ưu tiên gói đang mở). None nếu không có."""
+    code = (code or "").strip()
+    if not code:
+        return None
+    pkgs = await search_packages(cfg, code)
+    exact = [p for p in pkgs if (p["code"] or "").strip().lower() == code.lower()]
+    pool = exact or pkgs
+    if not pool:
+        return None
+    pool.sort(key=lambda p: (p.get("disabled", 0)))  # disabled=0 lên trước
+    return pool[0]
+
+
+async def prepare_group_package(db: AsyncSession, cfg: dict, group) -> tuple:
+    """Chuẩn bị (pkg, services) cho một đoàn. Đoàn có mã code gói -> tìm gói theo code;
+    không có -> dùng gói mặc định. Áp cờ bật/tắt dịch vụ riêng của đoàn."""
+    code = (getattr(group, "his_package_code", "") or "").strip() if group is not None else ""
+    if code:
+        meta = await resolve_package_by_code(cfg, code)
+        if not meta:
+            raise HisError(f"Không tìm thấy gói khám có mã code '{code}' trên HIS. Kiểm tra lại mã code gói của đoàn.")
+        pkg = {
+            "service_id": meta["service_id"],
+            "code": meta["code"],
+            "s_name": (meta["name"] or "").lower(),
+            "mobile_code_order": (meta["code"] or "").lower(),
+            "normal_price": meta["normal_price"],
+        }
+    else:
+        pkg = dict(cfg["package"])
+    # dịch vụ của gói
+    base = await services_for_package(db, cfg, pkg["service_id"])
+    # cờ bật/tắt riêng của đoàn (JSON {service_id: bool})
+    flags = {}
+    raw = getattr(group, "his_service_flags", "") if group is not None else ""
+    if raw:
+        try:
+            flags = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            flags = {}
+    services = []
+    for s in base:
+        s = dict(s)
+        sid = str(s.get("service_id"))
+        if sid in flags:
+            s["register"] = bool(flags[sid])
+        services.append(s)
+    return pkg, services
 
 
 # ---------------- config storage ----------------
@@ -131,25 +219,44 @@ async def _post(cfg, path, body):
 
 # ---------------- services template ----------------
 async def ensure_services(db: AsyncSession, cfg: dict) -> dict:
-    """Nạp danh sách dịch vụ của gói từ HIS nếu chưa có, gắn cờ register theo register_map."""
+    """Nạp danh sách dịch vụ của gói MẶC ĐỊNH từ HIS nếu chưa có, gắn cờ register theo register_map."""
     if cfg.get("list_services"):
         return cfg
     pkg_id = cfg["package"]["service_id"]
-    data = await _post(cfg, "service_package/findByServicePackage", {"servicePackageId": pkg_id})
+    cfg["list_services"] = await services_for_package(db, cfg, pkg_id)
+    await save_config(db, {"list_services": cfg["list_services"]})
+    return cfg
+
+
+async def services_for_package(db: AsyncSession, cfg: dict, pkg_id) -> list:
+    """Lấy danh sách dịch vụ của MỘT gói (theo service_package_id). Cache riêng theo từng mã gói."""
+    key = f"his_svc_{pkg_id}"
+    row = (await db.execute(select(m.Setting).where(m.Setting.key == key))).scalar_one_or_none()
+    if row and row.value:
+        try:
+            cached = json.loads(row.value)
+            if cached:
+                return cached
+        except json.JSONDecodeError:
+            pass
+    data = await _post(cfg, "service_package/findByServicePackage", {"servicePackageId": int(pkg_id)})
     services = data.get("data") or []
     if not services:
-        raise HisError("Không lấy được danh sách dịch vụ của gói khám từ HIS (rỗng).")
+        raise HisError(f"Không lấy được dịch vụ của gói {pkg_id} từ HIS (rỗng). Kiểm tra lại mã gói.")
     reg_map = cfg.get("register_map", {})
     out = []
     for s in services:
         s = dict(s)
         sid = str(s.get("service_id"))
-        s["register"] = bool(reg_map.get(sid, True))   # mặc định đăng ký, trừ dịch vụ bị tắt trong register_map
+        s["register"] = bool(reg_map.get(sid, True))
         s["diff_sex_type"] = False
         out.append(s)
-    cfg["list_services"] = out
-    await save_config(db, {"list_services": out})
-    return cfg
+    if row is None:
+        db.add(m.Setting(key=key, value=json.dumps(out, ensure_ascii=False)))
+    else:
+        row.value = json.dumps(out, ensure_ascii=False)
+    await db.commit()
+    return out
 
 
 # ---------------- payload builder ----------------
@@ -173,25 +280,39 @@ def _parse_dob(ngay_sinh):
     return f"{y:04d}/{mo:02d}/{d:02d} 00:00", mo
 
 
-def build_payload(rec: m.Record, cfg: dict) -> dict:
+def build_payload(rec: m.Record, cfg: dict, pkg: dict = None, services: list = None) -> dict:
     if not (rec.ho_ten or "").strip():
         raise HisError("Thiếu họ tên.")
+    pkg = pkg or cfg["package"]
+    services = services if services is not None else cfg.get("list_services", [])
     dob, mob = _parse_dob(rec.ngay_sinh)
     addr = cfg.get("address", {})
     ticket_name = f"{cfg.get('ticket_prefix', 'PDV')} {datetime.now(VN).date().isoformat()}"
     street = " ".join(x for x in [rec.so_nha, rec.khu_pho] if x).strip()
     full_address = ", ".join(x for x in [rec.so_nha, rec.khu_pho, rec.phuong, rec.tinh] if x).strip()
+    # dân tộc / quốc tịch: ưu tiên theo record, không có thì lấy mặc định cấu hình
+    def _int(v, default):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return default
+    ethnic_id = _int(getattr(rec, "ethnic_group_id", ""), cfg.get("ethnic_group_id", 1))
+    nat_id = _int(getattr(rec, "nationality_id", ""), cfg.get("nationality", 1))
+    province_id = _int(getattr(rec, "province_id", ""), addr.get("province_id", 701))
     return {
         "data_patient": {"relative_number": ""},
         "data_person": {
-            "ethnic_group_id": cfg.get("ethnic_group_id", 1),
+            "ethnic_group_id": ethnic_id,
             "gender": _map_gender(rec.gioi_tinh),
             "name": rec.ho_ten.strip(),
             "month_of_birth": mob,
             "date_of_birth": dob,
             "marital_status": 0,
             "phone_number": rec.so_dien_thoai or "",
-            "nationality": cfg.get("nationality", 1),
+            "nationality": nat_id,
+            "identity_card_number": (rec.cccd or "").strip(),
+            "cmnd": (rec.cccd or "").strip(),
+            "cccd": (rec.cccd or "").strip(),
         },
         "data_ticket": {
             "name": ticket_name, "enum_examination_type": 1, "examination_type_id": 1,
@@ -202,20 +323,19 @@ def build_payload(rec: m.Record, cfg: dict) -> dict:
         "data_address": {
             "street": street, "ward_name": rec.phuong or "",
             "district_id": addr.get("district_id", 70101),
-            "province_id": addr.get("province_id", 701),
+            "province_id": province_id,
             "full_address": full_address or street,
         },
         "data_plus": {"patient_code": ""},
         "data_insurance": {},
-        "list_order": _build_list_order(cfg),
-        "listServices": cfg["list_services"],
+        "list_order": _build_list_order(pkg),
+        "listServices": services,
     }
 
 
-async def register_one(db: AsyncSession, rec: m.Record, cfg: dict) -> dict:
-    """Đăng ký 1 người lên HIS. Trả về dict kết quả (patient_code, patient_id, ticket_id, code)."""
-    await ensure_services(db, cfg)
-    body = build_payload(rec, cfg)
+async def register_one(cfg: dict, rec: m.Record, pkg: dict, services: list) -> dict:
+    """Đăng ký 1 người lên HIS với gói + dịch vụ đã chuẩn bị sẵn."""
+    body = build_payload(rec, cfg, pkg=pkg, services=services)
     data = await _post(cfg, "out_patient_package_register/save", body)
     d = data.get("data") or {}
     his0 = (d.get("his") or [{}])[0]
@@ -227,8 +347,91 @@ async def register_one(db: AsyncSession, rec: m.Record, cfg: dict) -> dict:
     }
 
 
+# ---------------- phường/xã (ward) ----------------
+async def search_ward(cfg: dict, province_id, q: str = "", limit: int = 15) -> list:
+    """Tìm phường/xã theo tỉnh + từ khóa. Trả về [{ward_id, name, ma_phuong}]."""
+    try:
+        pid = int(province_id)
+    except (TypeError, ValueError):
+        return []
+    data = await _post(cfg, "ward/find", {"vi_name": q or "", "province_id": pid, "limit": limit})
+    out = []
+    for r in data.get("data") or []:
+        out.append({
+            "ward_id": r.get("ward_id"),
+            "name": (r.get("vi_name") or "").strip(),
+            "ma_phuong": r.get("ma_phuong") or "",
+        })
+    return out
+
+
+# ---------------- hủy đăng ký (xóa gói khám của bệnh nhân) ----------------
+async def unregister(cfg: dict, patient_code: str) -> dict:
+    """Hủy toàn bộ dịch vụ gói đã đăng ký của 1 bệnh nhân (theo patient_code)."""
+    found = await _post(cfg, "out_patient_package_register/find", {"patient_code": str(patient_code)})
+    rows = found.get("data") or []
+    if not rows:
+        raise HisError(f"Không tìm thấy bệnh nhân mã {patient_code} trên HIS.")
+    patient_id = rows[0].get("person_id") or rows[0].get("patient_id")
+    hist = await _post(cfg, "out_patient_package_register/get_history", {"patient_id": patient_id})
+    items = hist.get("data") or []
+    if not items:
+        return {"deleted": 0, "message": "Bệnh nhân chưa có dịch vụ gói nào để hủy."}
+    by_ticket = {}
+    for it in items:
+        tid = it.get("ticket_item_id")
+        by_ticket.setdefault(tid, []).append(it.get("ticket_item_service_package_id"))
+    total = 0
+    for tid, ids in by_ticket.items():
+        ids = [i for i in ids if i is not None]
+        if not ids:
+            continue
+        await _post(cfg, "out_patient_package_register/delete_package", {"list": ids, "ticket_item_id": tid})
+        total += len(ids)
+    return {"deleted": total, "message": f"Đã hủy {total} dịch vụ của bệnh nhân {patient_code}."}
+
+
 async def test_connection(db: AsyncSession, cfg: dict) -> str:
     """Gọi thử 1 endpoint nhẹ để kiểm tra token còn sống. Trả về thông báo."""
     data = await _post(cfg, "ethnic_group/find", {})
     n = len(data.get("data") or [])
     return f"Kết nối HIS OK — token hợp lệ (đọc được {n} dân tộc)."
+
+
+# ---------------- danh mục (dân tộc / quốc tịch / nghề nghiệp) ----------------
+CATALOG_KEY = "his_catalog"
+
+
+def _simplify(rows, id_field):
+    out = []
+    for r in rows or []:
+        if r.get("disable") in (1, "1") or r.get("disabled") in (1, "1"):
+            continue
+        out.append({"id": r.get(id_field), "name": (r.get("vi_name") or "").strip()})
+    return out
+
+
+async def fetch_catalog(db: AsyncSession, cfg: dict) -> dict:
+    ethnic = _simplify((await _post(cfg, "ethnic_group/find", {})).get("data"), "ethnic_group_id")
+    nationality = _simplify((await _post(cfg, "nationality/find", {})).get("data"), "nationality_id")
+    career = _simplify((await _post(cfg, "career/find", {})).get("data"), "career_id")
+    province = _simplify((await _post(cfg, "province/find", {})).get("data"), "province_id")
+    cat = {"ethnic": ethnic, "nationality": nationality, "career": career, "province": province}
+    row = (await db.execute(select(m.Setting).where(m.Setting.key == CATALOG_KEY))).scalar_one_or_none()
+    if row is None:
+        db.add(m.Setting(key=CATALOG_KEY, value=json.dumps(cat, ensure_ascii=False)))
+    else:
+        row.value = json.dumps(cat, ensure_ascii=False)
+    await db.commit()
+    return cat
+
+
+async def get_catalog(db: AsyncSession) -> dict:
+    base = {"ethnic": [], "nationality": [], "career": [], "province": []}
+    row = (await db.execute(select(m.Setting).where(m.Setting.key == CATALOG_KEY))).scalar_one_or_none()
+    if row and row.value:
+        try:
+            base.update(json.loads(row.value))
+        except json.JSONDecodeError:
+            pass
+    return base
