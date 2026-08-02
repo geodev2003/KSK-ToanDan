@@ -53,13 +53,27 @@ DEFAULT_CONFIG = {
 
 
 def _build_list_order(pkg):
+    s_name = pkg.get("s_name") or (pkg.get("name") or "").lower()
+    mobile_code_order = pkg.get("mobile_code_order") or (pkg.get("code") or "").lower()
     return [{
-        "created": "", "s_name": pkg.get("s_name", ""), "enum_examination_type": "",
-        "mobile_code_order": pkg.get("mobile_code_order", ""), "mobile_name_order": "",
-        "mobile_id": "", "valid": "", "normal_price": pkg.get("normal_price", 0),
-        "insurance_price": 0, "overtime_price": 0, "other_price": 0, "insurance_remuneration": 0,
-        "item_id": pkg["service_id"], "item_type": "consultation_package",
-        "key": 0, "name": "", "allow_choose_doctor": False, "paid": 1,
+        "created": "",
+        "s_name": s_name,
+        "enum_examination_type": "",
+        "mobile_code_order": mobile_code_order,
+        "mobile_name_order": "",
+        "mobile_id": "",
+        "valid": "",
+        "normal_price": pkg.get("normal_price", 0),
+        "insurance_price": 0,
+        "overtime_price": 0,
+        "other_price": 0,
+        "insurance_remuneration": 0,
+        "item_id": pkg["service_id"],
+        "item_type": "consultation_package",
+        "key": 0,
+        "name": "",
+        "allow_choose_doctor": False,
+        "paid": 0,
     }]
 
 
@@ -81,30 +95,43 @@ def _extract_data_rows(data) -> list:
 
 
 async def search_packages(cfg: dict, q: str = "") -> list:
-    """Lấy danh sách gói khám trên HIS (duyệt các trang) rồi lọc theo từ khóa (mã code hoặc tên,
-    không phân biệt dấu) ngay tại app — không phụ thuộc bộ lọc phía HIS."""
+    """Lấy danh sách gói khám trên HIS (thông qua service/find_consultation hoặc fallback service_package/find)."""
     collected = {}
-    page, max_pages = 1, 15
-    while page <= max_pages:
-        data = await _post(cfg, "service_package/find", {"page": page})
+    # Ưu tiên API chuẩn của HIS: POST /api/service/find_consultation
+    try:
+        data = await _post(cfg, "service/find_consultation", {"item_type": "consultation_package", "disabled": 0})
         rows = _extract_data_rows(data)
         for r in rows:
             if isinstance(r, dict):
                 sid = r.get("service_id") or r.get("id") or r.get("code")
                 if sid:
                     collected[sid] = r
+    except Exception:
+        pass
 
-        d = data.get("data") if isinstance(data, dict) else {}
-        paging = d.get("paging") if isinstance(d, dict) else {}
-        total_page = 1
-        if isinstance(paging, dict):
-            try:
-                total_page = int(paging.get("total_page") or 1)
-            except (TypeError, ValueError):
-                total_page = 1
-        if page >= total_page or not rows:
-            break
-        page += 1
+    # Phao cứu sinh: fallback về service_package/find nếu cần
+    if not collected:
+        page, max_pages = 1, 15
+        while page <= max_pages:
+            data = await _post(cfg, "service_package/find", {"page": page})
+            rows = _extract_data_rows(data)
+            for r in rows:
+                if isinstance(r, dict):
+                    sid = r.get("service_id") or r.get("id") or r.get("code")
+                    if sid:
+                        collected[sid] = r
+
+            d = data.get("data") if isinstance(data, dict) else {}
+            paging = d.get("paging") if isinstance(d, dict) else {}
+            total_page = 1
+            if isinstance(paging, dict):
+                try:
+                    total_page = int(paging.get("total_page") or 1)
+                except (TypeError, ValueError):
+                    total_page = 1
+            if page >= total_page or not rows:
+                break
+            page += 1
 
     out = []
     for r in collected.values():
@@ -302,9 +329,9 @@ def _parse_dob(ngay_sinh):
         else:  # DD/MM/YYYY
             d, mo, y = p1, p2, p3
         date(y, mo, d)
+        return f"{y:04d}/{mo:02d}/{d:02d} 00:00", mo
     except ValueError:
-        raise HisError("Ngày sinh không hợp lệ (cần dd/mm/yyyy).")
-    return f"{y:04d}/{mo:02d}/{d:02d} 00:00", mo
+        raise HisError(f"Ngày sinh '{ngay_sinh}' không hợp lệ (cần dd/mm/yyyy).")
 
 
 def build_payload(rec: m.Record, cfg: dict, pkg: dict = None, services: list = None) -> dict:
@@ -317,15 +344,18 @@ def build_payload(rec: m.Record, cfg: dict, pkg: dict = None, services: list = N
     ticket_name = f"{cfg.get('ticket_prefix', 'PDV')} {datetime.now(VN).date().isoformat()}"
     street = " ".join(x for x in [rec.so_nha, rec.khu_pho] if x).strip()
     full_address = ", ".join(x for x in [rec.so_nha, rec.khu_pho, rec.phuong, rec.tinh] if x).strip()
-    # dân tộc / quốc tịch: ưu tiên theo record, không có thì lấy mặc định cấu hình
+
     def _int(v, default):
         try:
             return int(v)
         except (TypeError, ValueError):
             return default
+
     ethnic_id = _int(getattr(rec, "ethnic_group_id", ""), cfg.get("ethnic_group_id", 1))
     nat_id = _int(getattr(rec, "nationality_id", ""), cfg.get("nationality", 1))
+    career_id = _int(getattr(rec, "career_id", ""), -1)
     province_id = _int(getattr(rec, "province_id", ""), addr.get("province_id", 701))
+
     return {
         "data_patient": {"relative_number": ""},
         "data_person": {
@@ -337,18 +367,26 @@ def build_payload(rec: m.Record, cfg: dict, pkg: dict = None, services: list = N
             "marital_status": 0,
             "phone_number": rec.so_dien_thoai or "",
             "nationality": nat_id,
+            "career_id": career_id,
+            "ssn": (rec.cccd or "").strip(),
             "identity_card_number": (rec.cccd or "").strip(),
             "cmnd": (rec.cccd or "").strip(),
             "cccd": (rec.cccd or "").strip(),
         },
         "data_ticket": {
-            "name": ticket_name, "enum_examination_type": 1, "examination_type_id": 1,
-            "discount_type_id": 0, "enum_introduction_outpatient": 2,
-            "introduction_outpatient_diagnose": "", "yeu_cau": 0, "coupon_code": "",
+            "name": ticket_name,
+            "enum_examination_type": 1,
+            "examination_type_id": 1,
+            "discount_type_id": 0,
+            "enum_introduction_outpatient": 2,
+            "introduction_outpatient_diagnose": "",
+            "yeu_cau": 0,
+            "coupon_code": "",
         },
         "data_ticket_item": {"diagnosis": ""},
         "data_address": {
-            "street": street, "ward_name": rec.phuong or "",
+            "street": street,
+            "ward_name": rec.phuong or "",
             "district_id": addr.get("district_id", 70101),
             "province_id": province_id,
             "full_address": full_address or street,
@@ -364,13 +402,16 @@ async def register_one(cfg: dict, rec: m.Record, pkg: dict, services: list) -> d
     """Đăng ký 1 người lên HIS với gói + dịch vụ đã chuẩn bị sẵn."""
     body = build_payload(rec, cfg, pkg=pkg, services=services)
     data = await _post(cfg, "out_patient_package_register/save", body)
-    d = data.get("data") or {}
-    his0 = (d.get("his") or [{}])[0]
+    d = data.get("data") if isinstance(data, dict) else {}
+    if not isinstance(d, dict):
+        d = {}
+    his_list = d.get("his") if isinstance(d.get("his"), list) else []
+    his0 = his_list[0] if his_list and isinstance(his_list[0], dict) else {}
     return {
-        "patient_code": str(d.get("patient_code") or ""),
-        "patient_id": str(d.get("patient_id") or ""),
-        "ticket_id": str(his0.get("ticket_id") or ""),
-        "code": his0.get("code") or "",
+        "patient_code": str(d.get("patient_code") or d.get("code") or ""),
+        "patient_id": str(d.get("patient_id") or d.get("id") or ""),
+        "ticket_id": str(his0.get("ticket_id") or his0.get("id") or ""),
+        "code": str(his0.get("code") or d.get("patient_code") or ""),
     }
 
 

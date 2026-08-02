@@ -763,11 +763,12 @@ async def register_bulk_his(request: Request, gid: int, payload: s.HisBulkRegist
 
     success_cnt = 0
     fail_cnt = 0
-    errors = []
+    results = []
 
     for r in records:
         if r.his_status == "registered" and not payload.force:
-            continue  # bỏ qua người đã ĐK thành công ngoại trừ khi ép ĐK lại
+            results.append({"id": r.id, "ho_ten": r.ho_ten, "ok": True, "message": "Đã đăng ký trước đó (bỏ qua)"})
+            continue
         try:
             out = await his_client.register_one(cfg, r, pkg, services)
             r.his_status = "registered"
@@ -777,16 +778,26 @@ async def register_bulk_his(request: Request, gid: int, payload: s.HisBulkRegist
             r.his_message = f"Thành công ({out['code']})"
             r.his_registered_at = datetime.now(his_client.VN).isoformat()
             success_cnt += 1
-        except his_client.HisError as e:
+            results.append({"id": r.id, "ho_ten": r.ho_ten, "ok": True, "message": r.his_message, "patient_code": out["patient_code"]})
+        except Exception as e:
             r.his_status = "error"
             r.his_message = str(e)[:250]
             fail_cnt += 1
-            errors.append({"id": r.id, "ho_ten": r.ho_ten, "error": str(e)})
+            results.append({"id": r.id, "ho_ten": r.ho_ten, "ok": False, "message": str(e)})
 
     await log_action(db, request, user, "HIS_REGISTER_BULK", "group", g.ma_doan,
                      f"Thành công {success_cnt}/{len(records)}, thất bại {fail_cnt} (Gói: {pkg['code']})")
     await db.commit()
-    return {"total": len(records), "success": success_cnt, "fail": fail_cnt, "errors": errors, "package": pkg["code"]}
+    return {
+        "ok": fail_cnt == 0,
+        "total": len(records),
+        "success": success_cnt,
+        "failed": fail_cnt,
+        "fail": fail_cnt,
+        "results": results,
+        "errors": [r for r in results if not r["ok"]],
+        "package": pkg["code"]
+    }
 
 
 @app.post("/api/records/{rid}/his-unregister")
