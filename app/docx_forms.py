@@ -188,6 +188,9 @@ def _add_boxes_line(doc, label, val_str, max_len=12, label_cm=8.5):
 
     row = t.rows[0]
     cell_lbl = row.cells[0]
+    # Set qua table.columns[i].width để cập nhật đúng <w:tblGrid>, tránh bị
+    # bẻ dòng nhãn do bảng dùng độ rộng cột mặc định khi render.
+    t.columns[0].width = Cm(label_cm)
     cell_lbl.width = Cm(label_cm)
     _set_cell_text(cell_lbl, label + ": ", size=11, bold=True)
     cell_lbl.paragraphs[0].paragraph_format.space_before = Pt(1)
@@ -205,6 +208,7 @@ def _add_boxes_line(doc, label, val_str, max_len=12, label_cm=8.5):
     # Thêm viền cho các ô chứa từng chữ số (ô 1 đến max_len)
     for i, d in enumerate(digits):
         cell = row.cells[1 + i]
+        t.columns[1 + i].width = Cm(0.42)
         cell.width = Cm(0.42)
         _set_cell_text(cell, d, size=9.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
         cell.paragraphs[0].paragraph_format.space_before = Pt(1)
@@ -232,7 +236,7 @@ def _find_template_path():
     return None
 
 
-def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5):
+def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5, space_after_pt=6):
     parent = p._element.getparent()
     p_idx = parent.index(p._element)
 
@@ -242,6 +246,12 @@ def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5):
 
     row = t.rows[0]
     cell_lbl = row.cells[0]
+    # QUAN TRỌNG: phải set độ rộng qua table.columns[i].width (không chỉ
+    # cell.width) để cập nhật đúng phần tử <w:tblGrid>. Nếu chỉ set
+    # cell.width, Word/LibreOffice vẫn dùng độ rộng mặc định (chia đều) của
+    # tblGrid khi render bảng ở chế độ layout "fixed" -> nhãn bị bẻ dòng lộn
+    # xộn và các ô số không thẳng hàng với các mục còn lại của form.
+    t.columns[0].width = Cm(label_cm)
     cell_lbl.width = Cm(label_cm)
     _set_cell_text(cell_lbl, label + ": ", size=11, bold=True)
     cell_lbl.paragraphs[0].paragraph_format.space_before = Pt(1)
@@ -260,6 +270,7 @@ def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5):
 
     for i, d in enumerate(digits):
         cell = row.cells[1 + i]
+        t.columns[1 + i].width = Cm(0.42)
         cell.width = Cm(0.42)
         _set_cell_text(cell, d, size=9.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
         cell.paragraphs[0].paragraph_format.space_before = Pt(1)
@@ -277,6 +288,26 @@ def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5):
         tcPr.append(tcBorders)
 
     parent.insert(p_idx, t._element)
+
+    # Chèn thêm 1 đoạn trống nhỏ ngay sau bảng để tạo khoảng cách dãn dòng
+    # với dòng/bảng tiếp theo (bảng không có thuộc tính "space after" như
+    # paragraph nên nếu không có đoạn đệm này, bảng mục 6 và mục 7 sẽ dính
+    # sát vào nhau và dính sát luôn vào dòng "8. Nơi ở hiện tại").
+    spacer = OxmlElement('w:p')
+    spacer_pPr = OxmlElement('w:pPr')
+    spacer_spacing = OxmlElement('w:spacing')
+    spacer_spacing.set(qn('w:after'), str(int(space_after_pt * 20)))
+    spacer_spacing.set(qn('w:line'), '20')
+    spacer_spacing.set(qn('w:lineRule'), 'exact')
+    spacer_pPr.append(spacer_spacing)
+    spacer_rPr = OxmlElement('w:rPr')
+    spacer_sz = OxmlElement('w:sz')
+    spacer_sz.set(qn('w:val'), '2')
+    spacer_rPr.append(spacer_sz)
+    spacer_pPr.append(spacer_rPr)
+    spacer.append(spacer_pPr)
+    parent.insert(p_idx + 1, spacer)
+
     parent.remove(p._element)
 
 

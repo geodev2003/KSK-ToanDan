@@ -608,12 +608,29 @@ async def test_his_connection(admin: m.User = Depends(require_admin), db: AsyncS
 
 
 @app.get("/api/his/packages")
-async def search_his_packages(q: str = "", admin: m.User = Depends(require_admin),
+@app.post("/api/his/packages")
+@app.post("/api/his/package-search")
+async def search_his_packages(payload: dict = None, q: str = "", admin: m.User = Depends(require_admin),
                               db: AsyncSession = Depends(get_db)):
     """Tìm danh sách gói khám trên HIS theo mã code hoặc tên gói."""
+    if payload and isinstance(payload, dict) and "q" in payload:
+        q = payload["q"]
     cfg = await his_client.get_config(db)
     try:
         return await his_client.search_packages(cfg, q)
+    except his_client.HisError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/his/ward-search")
+async def search_his_ward(payload: dict, _: m.User = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)):
+    """Tìm phường/xã theo tỉnh + từ khóa."""
+    cfg = await his_client.get_config(db)
+    pid = payload.get("province_id") or 0
+    q = payload.get("q") or ""
+    try:
+        return await his_client.search_ward(cfg, pid, q)
     except his_client.HisError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -713,6 +730,7 @@ async def register_one_record_his(request: Request, rid: int, payload: s.HisRegi
 
 
 @app.post("/api/groups/{gid}/his-bulk-register")
+@app.post("/api/groups/{gid}/his-register-bulk")
 async def register_bulk_his(request: Request, gid: int, payload: s.HisBulkRegister,
                             user: m.User = Depends(require_perm("his_register")),
                             db: AsyncSession = Depends(get_db)):
