@@ -518,10 +518,10 @@ def _build_form_scratch(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     # ---------- THÔNG TIN HÀNH CHÍNH (Đầy đủ 15 mục theo Mẫu 02) ----------
     _heading(d, "THÔNG TIN HÀNH CHÍNH")
     _field_line(d, "1. Họ và tên (viết chữ in hoa)", (rec.get("ho_ten") or "").upper())
-    _checkbox_line(d, [("Nam", gioi == "Nam"), ("Nữ", gioi == "Nữ")])
+    _checkbox_line(d, [("Nam", gioi == "Nam"), ("Nữ", gioi == "Nữ")], prefix="2. Giới tính:  ")
     _field_line(d, "3. Ngày tháng năm sinh", rec.get("ngay_sinh"))
     _field_line(d, "4. Dân tộc", rec.get("dan_toc"))
-    _field_line(d, "5. Nhóm máu (nếu có)", "")
+    _field_line(d, "5. Nhóm máu (nếu có)", rec.get("nhom_mau") or "")
     _add_boxes_line(d, "6. Số CCCD/Mã số định danh/Hộ chiếu", rec.get("cccd"), 12, label_cm=8.5)
     _add_boxes_line(d, "7. Số thẻ BHYT", rec.get("ma_bhyt"), 15, label_cm=8.5)
     dia_chi = ", ".join(x for x in [rec.get("so_nha"), rec.get("khu_pho"), rec.get("phuong"), rec.get("tinh")] if x)
@@ -537,7 +537,6 @@ def _build_form_scratch(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
 
     # 12, 13, 14, 15. Người giám hộ & liên hệ
     _field_line(d, "12. Họ và tên mẹ hoặc người giám hộ (đối với trẻ ≤16 tuổi)", "")
-    _field_line(d, "CCCD của mẹ hoặc người giám hộ", "")
     _checkbox_line(d, [("Cha", False), ("Mẹ", False), ("Ông/bà", False), ("Anh/chị", False), ("Họ hàng", False), ("Khác", False)], prefix="13. Mối quan hệ với trẻ: ")
     _field_line(d, "14. Điện thoại di động", rec.get("so_dien_thoai"))
     _field_line(d, "15. Lý do khám sức khỏe", "Khám sức khỏe học sinh / định kỳ")
