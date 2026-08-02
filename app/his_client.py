@@ -159,7 +159,10 @@ async def prepare_group_package(db: AsyncSession, cfg: dict, group) -> tuple:
             "normal_price": meta["normal_price"],
         }
     else:
-        pkg = dict(cfg["package"])
+        pkg_cfg = cfg.get("package")
+        if not pkg_cfg or not isinstance(pkg_cfg, dict) or not pkg_cfg.get("service_id"):
+            raise HisError("Đoàn chưa chọn gói khám HIS riêng và hệ thống cũng chưa cài đặt gói khám mặc định trong 'Cấu hình HIS'. Mở sửa đoàn để chọn gói khám.")
+        pkg = dict(pkg_cfg)
     # dịch vụ của gói
     base = await services_for_package(db, cfg, pkg["service_id"])
     # cờ bật/tắt riêng của đoàn (JSON {service_id: bool})
@@ -186,12 +189,7 @@ async def get_config(db: AsyncSession) -> dict:
     cfg = dict(DEFAULT_CONFIG)
     if row and row.value:
         try:
-            saved = json.loads(row.value)
-            cfg.update(saved)
-            # gộp sâu cho address/package/register_map
-            for k in ("address", "package", "register_map"):
-                if isinstance(DEFAULT_CONFIG[k], dict):
-                    merged = dict(DEFAULT_CONFIG[k]); merged.update(saved.get(k, {})); cfg[k] = merged
+            cfg.update(json.loads(row.value))
         except json.JSONDecodeError:
             pass
     return cfg
@@ -199,15 +197,10 @@ async def get_config(db: AsyncSession) -> dict:
 
 async def save_config(db: AsyncSession, patch: dict) -> dict:
     cfg = await get_config(db)
-    for k, v in patch.items():
-        if k in ("address", "package", "register_map") and isinstance(v, dict):
-            d = dict(cfg.get(k, {})); d.update(v); cfg[k] = d
-        else:
-            cfg[k] = v
+    cfg.update(patch)
     row = (await db.execute(select(m.Setting).where(m.Setting.key == CONFIG_KEY))).scalar_one_or_none()
     if row is None:
-        row = m.Setting(key=CONFIG_KEY, value=json.dumps(cfg, ensure_ascii=False))
-        db.add(row)
+        db.add(m.Setting(key=CONFIG_KEY, value=json.dumps(cfg, ensure_ascii=False)))
     else:
         row.value = json.dumps(cfg, ensure_ascii=False)
     await db.commit()
@@ -231,9 +224,9 @@ async def _post(cfg, path, body):
         async with httpx.AsyncClient(timeout=30) as c:
             r = await c.post(url, json=body, headers=_headers(cfg))
     except httpx.RequestError as e:
-        raise HisError(f"Không kết nối được HIS ({url}). Kiểm tra máy có vào được noitru.bvhongduc.vn:8080 không. Chi tiết: {e}")
+        raise HisError(f"Không kết nối được HIS ({url}). Kiểm tra kết nối mạng/máy chủ HIS. Chi tiết: {e}")
     if r.status_code in (401, 403):
-        raise HisError("HIS từ chối (token hết hạn hoặc sai). Hãy đăng nhập lại HIS, bắt token mới bằng sniffer rồi cập nhật trong 'Cấu hình HIS'.")
+        raise HisError("HIS từ chối (token hết hạn hoặc sai). Hãy đăng nhập lại HIS, lấy token mới dán vào 'Cấu hình HIS'.")
     if r.status_code >= 400:
         raise HisError(f"HIS trả lỗi HTTP {r.status_code}.")
     try:
@@ -251,7 +244,9 @@ async def ensure_services(db: AsyncSession, cfg: dict) -> dict:
     """Nạp danh sách dịch vụ của gói MẶC ĐỊNH từ HIS nếu chưa có, gắn cờ register theo register_map."""
     if cfg.get("list_services"):
         return cfg
-    pkg_id = cfg["package"]["service_id"]
+    pkg_id = cfg.get("package", {}).get("service_id")
+    if not pkg_id:
+        return cfg
     cfg["list_services"] = await services_for_package(db, cfg, pkg_id)
     await save_config(db, {"list_services": cfg["list_services"]})
     return cfg
@@ -290,19 +285,22 @@ async def services_for_package(db: AsyncSession, cfg: dict, pkg_id) -> list:
 
 # ---------------- payload builder ----------------
 def _map_gender(gioi_tinh):
-    if gioi_tinh == "Nam":
-        return "male"
     if gioi_tinh == "Nữ":
         return "female"
     return "male"  # mặc định, HIS bắt buộc có giới tính
 
 
 def _parse_dob(ngay_sinh):
-    parts = (ngay_sinh or "").strip().split("/")
+    s = (ngay_sinh or "").strip().replace("-", "/")
+    parts = s.split("/")
     if len(parts) != 3:
-        raise HisError("Ngày sinh không hợp lệ (cần dd/mm/yyyy).")
+        raise HisError(f"Ngày sinh '{ngay_sinh}' không đúng định dạng (cần dd/mm/yyyy).")
     try:
-        d, mo, y = int(parts[0]), int(parts[1]), int(parts[2])
+        p1, p2, p3 = int(parts[0]), int(parts[1]), int(parts[2])
+        if p1 > 1000:  # YYYY/MM/DD
+            y, mo, d = p1, p2, p3
+        else:  # DD/MM/YYYY
+            d, mo, y = p1, p2, p3
         date(y, mo, d)
     except ValueError:
         raise HisError("Ngày sinh không hợp lệ (cần dd/mm/yyyy).")

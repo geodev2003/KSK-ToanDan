@@ -707,7 +707,7 @@ async def register_one_record_his(request: Request, rid: int, payload: s.HisRegi
     if not rec:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi")
     if rec.his_status == "registered" and not payload.force:
-        raise HTTPException(status_code=400, detail=f"Bản ghi đã đăng ký thành công (mã BN {rec.his_patient_code}). Thêm force=true nếu muốn đăng ký lại.")
+        return {"ok": False, "message": f"Bản ghi đã đăng ký thành công (mã BN {rec.his_patient_code}). Thêm force=true nếu muốn đăng ký lại.", "record": rec}
 
     g = await db.scalar(select(m.Group).where(m.Group.id == rec.group_id))
     cfg = await his_client.get_config(db)
@@ -724,12 +724,19 @@ async def register_one_record_his(request: Request, rid: int, payload: s.HisRegi
                          f"{rec.ho_ten} -> {res['patient_code']} ({pkg['code']})")
         await db.commit()
         await db.refresh(rec)
-        return rec
+        return {"ok": True, "record": rec}
     except his_client.HisError as e:
         rec.his_status = "error"
         rec.his_message = str(e)[:250]
         await db.commit()
-        raise HTTPException(status_code=400, detail=str(e))
+        await db.refresh(rec)
+        return {"ok": False, "message": str(e), "record": rec}
+    except Exception as e:
+        rec.his_status = "error"
+        rec.his_message = str(e)[:250]
+        await db.commit()
+        await db.refresh(rec)
+        return {"ok": False, "message": f"Lỗi đăng ký: {e}", "record": rec}
 
 
 @app.post("/api/groups/{gid}/his-bulk-register")
