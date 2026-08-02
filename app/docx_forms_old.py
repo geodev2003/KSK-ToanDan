@@ -289,13 +289,6 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     gioi = (rec.get("gioi_tinh") or "").strip()
     ten_truong = group.get("ten_doan") or ""
     dia_diem = group.get("dia_diem") or ""
-    lop_val = rec.get("lop") or group.get("lop") or ""
-
-    # Mẫu 02 có 2 dòng "Xã/Phường:" liên tiếp nhau: dòng đầu thuộc mục 8
-    # (Nơi ở hiện tại của trẻ), dòng thứ hai thuộc mục 11 (Địa chỉ trường).
-    # Dùng cờ này để chỉ điền đúng 1 lần cho dòng đầu, tránh ghi đè nhầm dữ
-    # liệu "phường" của nhà lên cả dòng "phường" của trường.
-    xa_phuong_filled = False
 
     for p in list(d.paragraphs):
         pPr = p._p.get_or_add_pPr()
@@ -342,13 +335,6 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
             p.text = ""
             r1 = p.add_run("5. Nhóm máu (nếu có): ")
             _set_font(r1, 12)
-            nhom_mau = rec.get("nhom_mau") or ""
-            if nhom_mau:
-                r2 = p.add_run(str(nhom_mau))
-                _set_font(r2, 12, bold=True)
-            else:
-                r2 = p.add_run("." * 60)
-                _set_font(r2, 12)
         elif "Số CCCD/Mã số định danh/Hộ chiếu" in txt:
             _insert_boxes_row(d, p, "6. Số CCCD/Mã số định danh/Hộ chiếu", rec.get("cccd"), 12, 8.5)
         elif "Số thẻ BHYT:" in txt:
@@ -360,19 +346,15 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
             dia_chi = ", ".join(x for x in [rec.get("so_nha"), rec.get("khu_pho"), rec.get("phuong"), rec.get("tinh")] if x)
             r2 = p.add_run(dia_chi)
             _set_font(r2, 12, bold=True)
-        elif "Xã/Phường:" in txt and not xa_phuong_filled:
-            # Dòng Xã/Phường đầu tiên -> thuộc mục 8 (nơi ở hiện tại)
+        elif "Xã/Phường:" in txt:
             p.text = ""
             r1 = p.add_run("Xã/Phường: ")
             _set_font(r1, 12)
             r2 = p.add_run(str(rec.get("phuong") or ""))
             _set_font(r2, 12, bold=True)
-            xa_phuong_filled = True
         elif "Trẻ có đi học:" in txt:
             p.text = ""
-            # Giữ ký tự tab (\t) để bám đúng các tab-stop đã định nghĩa sẵn
-            # trong đoạn văn gốc, đảm bảo 2 ô checkbox thẳng cột như bản mẫu.
-            r1 = p.add_run(f"9. Trẻ có đi học:\t{CHECKED} Có\t{CHECK} Không (chuyển qua câu 12)")
+            r1 = p.add_run(f"9. Trẻ có đi học:   {CHECKED} Có   {CHECK} Không (chuyển qua câu 12)")
             _set_font(r1, 12)
         elif "Tên Trường (nếu có):" in txt:
             p.text = ""
@@ -380,14 +362,6 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
             _set_font(r1, 12)
             r2 = p.add_run(f"{ten_truong}")
             _set_font(r2, 12, bold=True)
-            r3 = p.add_run("     Lớp: ")
-            _set_font(r3, 12)
-            if lop_val:
-                r4 = p.add_run(str(lop_val))
-                _set_font(r4, 12, bold=True)
-            else:
-                r4 = p.add_run("." * 20)
-                _set_font(r4, 12)
         elif "Địa chỉ trường:" in txt:
             p.text = ""
             r1 = p.add_run("11. Địa chỉ trường: ")
@@ -402,10 +376,7 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
             _set_font(r2, 12)
         elif "Mối quan hệ với trẻ:" in txt:
             p.text = ""
-            r1 = p.add_run(
-                f"13. Mối quan hệ với trẻ:\t{CHECK} Cha\t{CHECK} Mẹ\t{CHECK} Ông/bà\t"
-                f"{CHECK} Anh/chị\t{CHECK} Họ hàng\t{CHECK} Khác"
-            )
+            r1 = p.add_run(f"13. Mối quan hệ với trẻ:   {CHECK} Cha   {CHECK} Mẹ   {CHECK} Ông/bà   {CHECK} Anh/chị   {CHECK} Họ hàng   {CHECK} Khác")
             _set_font(r1, 12)
         elif "Điện thoại di động:" in txt:
             p.text = ""

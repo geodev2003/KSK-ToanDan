@@ -556,6 +556,7 @@ async def get_his_config(admin: m.User = Depends(require_admin), db: AsyncSessio
 
 
 @app.post("/api/his/config")
+@app.put("/api/his/config")
 async def update_his_config(request: Request, payload: dict,
                             admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     cfg = await his_client.save_config(db, payload)
@@ -624,12 +625,41 @@ async def get_his_catalog(_: m.User = Depends(get_current_user), db: AsyncSessio
 
 
 @app.post("/api/his/catalog/refresh")
+@app.post("/api/his/refresh-catalog")
 async def refresh_his_catalog(admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """Tải lại danh mục từ HIS và lưu cache."""
     cfg = await his_client.get_config(db)
     try:
         cat = await his_client.fetch_catalog(db, cfg)
-        return {"ok": True, "counts": {k: len(v) for k, v in cat.items()}}
+        return {
+            "ok": True,
+            "ethnic": cat.get("ethnic", []),
+            "nationality": cat.get("nationality", []),
+            "career": cat.get("career", []),
+            "province": cat.get("province", []),
+            "counts": {k: len(v) for k, v in cat.items()}
+        }
+    except his_client.HisError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/his/refresh-services")
+async def refresh_his_services(admin: m.User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Tải lại danh sách dịch vụ của gói mặc định từ HIS."""
+    cfg = await his_client.get_config(db)
+    pkg_id = cfg.get("package", {}).get("service_id")
+    if not pkg_id:
+        raise HTTPException(status_code=400, detail="Chưa chọn gói khám mặc định trong Cấu hình HIS")
+    try:
+        key = f"his_svc_{pkg_id}"
+        row = (await db.execute(select(m.Setting).where(m.Setting.key == key))).scalar_one_or_none()
+        if row:
+            await db.delete(row)
+            await db.commit()
+        services = await his_client.services_for_package(db, cfg, pkg_id)
+        cfg["list_services"] = services
+        await his_client.save_config(db, {"list_services": services})
+        return {"ok": True, "count": len(services)}
     except his_client.HisError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
