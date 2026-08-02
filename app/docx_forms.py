@@ -284,6 +284,13 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
     dia_diem = group.get("dia_diem") or ""
 
     for p in list(d.paragraphs):
+        pPr = p._p.get_or_add_pPr()
+        numPr = pPr.find(qn('w:numPr'))
+        if numPr is not None:
+            numId_el = numPr.find(qn('w:numId'))
+            if numId_el is not None and numId_el.attrib.get(qn('w:val')) == '1':
+                pPr.remove(numPr)
+
         txt = p.text.strip()
         if "Mẫu 2. MẪU GIẤY KHÁM SỨC KHỎE" in txt:
             p.text = ""
@@ -311,7 +318,7 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
             _set_font(r1, 12)
             r2 = p.add_run(str(rec.get("ngay_sinh") or ""))
             _set_font(r2, 12, bold=True)
-        elif "Dân tộc:" in txt and "4." in txt:
+        elif "Dân tộc:" in txt:
             p.text = ""
             r1 = p.add_run("4. Dân tộc: ")
             _set_font(r1, 12)
