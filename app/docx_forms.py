@@ -190,6 +190,8 @@ def _add_boxes_line(doc, label, val_str, max_len=12, label_cm=8.5):
     cell_lbl = row.cells[0]
     cell_lbl.width = Cm(label_cm)
     _set_cell_text(cell_lbl, label + ": ", size=11, bold=True)
+    cell_lbl.paragraphs[0].paragraph_format.space_before = Pt(1)
+    cell_lbl.paragraphs[0].paragraph_format.space_after = Pt(1)
 
     # Xóa viền cho ô chứa nhãn tên mục
     tcPr0 = cell_lbl._tc.get_or_add_tcPr()
@@ -205,6 +207,8 @@ def _add_boxes_line(doc, label, val_str, max_len=12, label_cm=8.5):
         cell = row.cells[1 + i]
         cell.width = Cm(0.42)
         _set_cell_text(cell, d, size=9.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+        cell.paragraphs[0].paragraph_format.space_before = Pt(1)
+        cell.paragraphs[0].paragraph_format.space_after = Pt(1)
 
         tcPr = cell._tc.get_or_add_tcPr()
         tcBorders = OxmlElement('w:tcBorders')
@@ -229,7 +233,6 @@ def _find_template_path():
 
 
 def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5):
-    p.text = ""
     parent = p._element.getparent()
     p_idx = parent.index(p._element)
 
@@ -241,6 +244,8 @@ def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5):
     cell_lbl = row.cells[0]
     cell_lbl.width = Cm(label_cm)
     _set_cell_text(cell_lbl, label + ": ", size=11, bold=True)
+    cell_lbl.paragraphs[0].paragraph_format.space_before = Pt(1)
+    cell_lbl.paragraphs[0].paragraph_format.space_after = Pt(1)
 
     tcPr0 = cell_lbl._tc.get_or_add_tcPr()
     tcBorders0 = OxmlElement('w:tcBorders')
@@ -257,6 +262,8 @@ def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5):
         cell = row.cells[1 + i]
         cell.width = Cm(0.42)
         _set_cell_text(cell, d, size=9.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+        cell.paragraphs[0].paragraph_format.space_before = Pt(1)
+        cell.paragraphs[0].paragraph_format.space_after = Pt(1)
 
         tcPr = cell._tc.get_or_add_tcPr()
         tcBorders = OxmlElement('w:tcBorders')
@@ -269,8 +276,8 @@ def _insert_boxes_row(doc, p, label, val_str, max_len=12, label_cm=8.5):
             tcBorders.append(b)
         tcPr.append(tcBorders)
 
-    parent.remove(t._element)
-    parent.insert(p_idx + 1, t._element)
+    parent.insert(p_idx, t._element)
+    parent.remove(p._element)
 
 
 def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VIỆN HỒNG ĐỨC II") -> "Document":
@@ -361,6 +368,16 @@ def build_patient_form(rec: dict, group: dict, hospital_name: str = "BỆNH VI�
             _set_font(r1, 12)
             r2 = p.add_run(f"{dia_diem}")
             _set_font(r2, 12, bold=True)
+        elif "Họ và tên mẹ hoặc người giám hộ" in txt:
+            p.text = ""
+            r1 = p.add_run("12. Họ và tên mẹ hoặc người giám hộ (đối với trẻ ≤16 tuổi): ")
+            _set_font(r1, 12)
+            r2 = p.add_run("." * 35 + " CCCD của mẹ hoặc người giám hộ: " + "." * 15)
+            _set_font(r2, 12)
+        elif "Mối quan hệ với trẻ:" in txt:
+            p.text = ""
+            r1 = p.add_run(f"13. Mối quan hệ với trẻ:   {CHECK} Cha   {CHECK} Mẹ   {CHECK} Ông/bà   {CHECK} Anh/chị   {CHECK} Họ hàng   {CHECK} Khác")
+            _set_font(r1, 12)
         elif "Điện thoại di động:" in txt:
             p.text = ""
             r1 = p.add_run("14. Điện thoại di động: ")
