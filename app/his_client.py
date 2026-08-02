@@ -96,7 +96,12 @@ async def search_packages(cfg: dict, q: str = "") -> list:
 
         d = data.get("data") if isinstance(data, dict) else {}
         paging = d.get("paging") if isinstance(d, dict) else {}
-        total_page = paging.get("total_page") if isinstance(paging, dict) else 1
+        total_page = 1
+        if isinstance(paging, dict):
+            try:
+                total_page = int(paging.get("total_page") or 1)
+            except (TypeError, ValueError):
+                total_page = 1
         if page >= total_page or not rows:
             break
         page += 1
@@ -105,17 +110,22 @@ async def search_packages(cfg: dict, q: str = "") -> list:
     for r in collected.values():
         code_val = str(r.get("code") or r.get("service_package_code") or "").strip()
         name_val = str(r.get("vi_name") or r.get("name") or r.get("service_package_name") or "").strip()
+        disabled_val = 0
+        try:
+            disabled_val = int(r.get("disabled") or 0)
+        except (TypeError, ValueError):
+            disabled_val = 0
         out.append({
             "service_id": r.get("service_id") or r.get("id"),
             "code": code_val,
             "name": name_val,
             "normal_price": r.get("normal_price") or r.get("price") or 0,
-            "disabled": r.get("disabled", 0),
+            "disabled": disabled_val,
         })
     qn = _no_accent(q)
     if qn:
         out = [p for p in out if qn in _no_accent(p["code"]) or qn in _no_accent(p["name"])]
-    out.sort(key=lambda p: (p.get("disabled", 0), p["name"]))
+    out.sort(key=lambda p: (int(p.get("disabled") or 0), p["name"]))
     return out
 
 
