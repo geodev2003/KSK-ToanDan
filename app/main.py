@@ -610,16 +610,19 @@ async def test_his_connection(admin: m.User = Depends(require_admin), db: AsyncS
 @app.get("/api/his/packages")
 @app.post("/api/his/packages")
 @app.post("/api/his/package-search")
-async def search_his_packages(payload: dict = None, q: str = "", admin: m.User = Depends(require_admin),
+async def search_his_packages(payload: dict = None, q: str = "", _: m.User = Depends(get_current_user),
                               db: AsyncSession = Depends(get_db)):
     """Tìm danh sách gói khám trên HIS theo mã code hoặc tên gói."""
-    if payload and isinstance(payload, dict) and "q" in payload:
-        q = payload["q"]
+    if payload and isinstance(payload, dict):
+        q = payload.get("q") or payload.get("code") or payload.get("vi_name") or q
     cfg = await his_client.get_config(db)
     try:
-        return await his_client.search_packages(cfg, q)
+        pkgs = await his_client.search_packages(cfg, q or "")
+        return {"ok": True, "packages": pkgs}
     except his_client.HisError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return {"ok": False, "message": str(e), "packages": []}
+    except Exception as e:
+        return {"ok": False, "message": f"Lỗi tìm gói khám: {e}", "packages": []}
 
 
 @app.post("/api/his/ward-search")

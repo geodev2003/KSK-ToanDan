@@ -68,29 +68,48 @@ def _no_accent(s: str) -> str:
     return "".join(c for c in s if unicodedata.category(c) != "Mn").lower().strip()
 
 
+def _extract_data_rows(data) -> list:
+    d = data.get("data") if isinstance(data, dict) else data
+    if isinstance(d, list):
+        return d
+    if isinstance(d, dict):
+        for k in ["data_list", "list", "items", "rows", "data"]:
+            sub = d.get(k)
+            if isinstance(sub, list):
+                return sub
+    return []
+
+
 async def search_packages(cfg: dict, q: str = "") -> list:
     """Lấy danh sách gói khám trên HIS (duyệt các trang) rồi lọc theo từ khóa (mã code hoặc tên,
     không phân biệt dấu) ngay tại app — không phụ thuộc bộ lọc phía HIS."""
     collected = {}
-    page, max_pages = 1, 10
+    page, max_pages = 1, 15
     while page <= max_pages:
         data = await _post(cfg, "service_package/find", {"page": page})
-        d = data.get("data") or {}
-        rows = d.get("data_list") or []
+        rows = _extract_data_rows(data)
         for r in rows:
-            collected[r.get("service_id")] = r
-        paging = d.get("paging") or {}
-        total_page = paging.get("total_page") or 1
+            if isinstance(r, dict):
+                sid = r.get("service_id") or r.get("id") or r.get("code")
+                if sid:
+                    collected[sid] = r
+
+        d = data.get("data") if isinstance(data, dict) else {}
+        paging = d.get("paging") if isinstance(d, dict) else {}
+        total_page = paging.get("total_page") if isinstance(paging, dict) else 1
         if page >= total_page or not rows:
             break
         page += 1
+
     out = []
     for r in collected.values():
+        code_val = str(r.get("code") or r.get("service_package_code") or "").strip()
+        name_val = str(r.get("vi_name") or r.get("name") or r.get("service_package_name") or "").strip()
         out.append({
-            "service_id": r.get("service_id"),
-            "code": (r.get("code") or "").strip(),
-            "name": (r.get("vi_name") or "").strip(),
-            "normal_price": r.get("normal_price") or 0,
+            "service_id": r.get("service_id") or r.get("id"),
+            "code": code_val,
+            "name": name_val,
+            "normal_price": r.get("normal_price") or r.get("price") or 0,
             "disabled": r.get("disabled", 0),
         })
     qn = _no_accent(q)
@@ -240,7 +259,7 @@ async def services_for_package(db: AsyncSession, cfg: dict, pkg_id) -> list:
         except json.JSONDecodeError:
             pass
     data = await _post(cfg, "service_package/findByServicePackage", {"servicePackageId": int(pkg_id)})
-    services = data.get("data") or []
+    services = _extract_data_rows(data)
     if not services:
         raise HisError(f"Không lấy được dịch vụ của gói {pkg_id} từ HIS (rỗng). Kiểm tra lại mã gói.")
     reg_map = cfg.get("register_map", {})
